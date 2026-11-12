@@ -22,6 +22,7 @@ so this file is the shared record of what was run and what it showed.
 | Grid | Question | Runs | Date run | Machine | Main result | Verdict |
 |---|---|---|---|---|---|---|
 | `smoke` | Does the pipeline work end to end? | 6 | 2026-11-08 | Windows 11, `247f6cc` | 6/6 finish; only `gidas_1554431` without error crashes | Works; same numbers before and after a fresh setup from `main` |
+| `size_bearing_smoke` | Does the physical-size plugin pass through neutrally and run with assumed distance/azimuth coefficients? | 9 | 2026-11-12 | Windows 11 x64 | 9 completed; neutral ego outputs equal all 3 references; 6 road-geometry warnings | Integration passed; coefficients uncalibrated |
 | `range_factors` | Size, identification, detection and OU errors, each alone: which matter? | 1899 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios: target vanishing while missed 30/400 crash (95% CI 5.3–10.5%); wrong class ×1.77 at 20% 9/60 (8.1–26.1%), at 5% 1/60; size scale 1.1 1/2, 1.2 2/2; OU 0.8% and 1.4% 0/60; all other cells 0 | At these assumed values detection, identification (×1.77) and size (from +10%) can cause crashes, OU at 0.8–1.4% does not. Same as the 2026-11-01 studio sweep, run by run |
 | `detection_seeds_50_99` | Extra seeds 50–99 for the detection groups of `range_factors` | 600 | | | | |
 | `ou_size` | How large must the OU error be before safety changes? | 282 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios: 0/60 at 5%, 5/60 at 10% (3.6–18.1%), 8/60 at 20% (6.9–24.2%). `gidas_1554431`: 17, 14, 12 of 30 crash, median impact 17.5, 19.6, 24.7 km/h (no error 10.5) | Safe scenarios start crashing between 5% and 10%; on `gidas_1554431` fewer but harder crashes as the error grows. Sizes are sensitivity levels, not sensor values. Same as the 2026-11-03 studio sweep, run by run |
@@ -123,3 +124,14 @@ so this file is the shared record of what was run and what it showed.
   1 and 17/470; over 30%, 8 cases, 0 and 0/80. The two cases that crash already at OU 5% and bias +5% (`1571693`,
   `1620061`, ego 95–100 km/h) keep 0.2–0.3 m without error.
 - Per-case table: `output/grids/tasc_tolerance/per_case.csv` (with the analysis script next to it).
+
+### `size_bearing_smoke`
+
+Preregistered decision rule (2026-11-12): every baseline/neutral/demo run must complete;
+the neutral controller outputs must equal the matching baseline outputs. Perception
+logs must contain applied physical dimensions, and demo dimensions must differ from
+truth. This checks integration only: current rear-end scenarios do not cover large
+azimuths, and one seed per cell cannot establish a collision probability. Assumed demo
+coefficients and model details are in SIZE_BEARING.md. Separately, the integration test
+must show that increased perceived length reaches the example AEB and changes its
+braking time while true dimensions remain unchanged.
