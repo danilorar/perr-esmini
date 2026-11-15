@@ -123,7 +123,7 @@ class OuTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_registry_finds_every_plugin_and_no_helper(self):
-        self.assertEqual(set(errors.all_plugins()), {'detection', 'identification', 'ou', 'size', 'template'})
+        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'identification', 'ou', 'size', 'template'})
 
     def test_defaults_are_filled_in(self):
         entries = config([{'type': 'detection'}, {'type': 'size', 'name': 'big', 'scale': 2}])['errors']
@@ -175,6 +175,35 @@ class ChainTests(unittest.TestCase):
         rows = run.log()
         self.assertEqual(float(rows[1]['ou.z']), z[7])
         self.assertEqual(float(rows[1]['raw_range_m']), 30.0 + sigma * z[7])
+
+    def test_ou_bias_follows_the_same_distance_law(self):
+        z = unit_samples(4, 0.5, TARGET['id'], DT, 20)
+        share = (30.0 - 3.0) / (100.0 - 3.0)
+        bias_only = ChainRun([{'type': 'ou', 'mae_pct': 0.0, 'bias_pct': 5.0}], seed=4)
+        both = ChainRun([{'type': 'ou', 'mae_pct': 5.0, 'bias_pct': -2.0}], seed=4)
+        for step in (0, 7, 19):
+            self.assertAlmostEqual(bias_only.step(step)[1]['range'], 30.0 + 5.0 * share, places=12)
+            self.assertAlmostEqual(both.step(step)[1]['range'], 30.0 - 2.0 * share + 5.0 * share * SIGMA_PER_MAE * z[step],
+                                   places=12)
+
+    def test_box_length_moves_the_ends_or_the_centre(self):
+        neutral = ChainRun([{'type': 'box'}])
+        centre = ChainRun([{'type': 'box', 'length_scale': 1.1, 'width_scale': 0.5}])
+        near_end = ChainRun([{'type': 'box', 'length_scale': 1.1, 'keep': 'near_end'}])
+        shorter = ChainRun([{'type': 'box', 'length_scale': 0.8, 'keep': 'near_end'}, {'type': 'size', 'bias_m': 1.0}])
+        flags, seen = neutral.step(0)
+        self.assertEqual((flags, seen['range'], seen['length'], seen['width']), (errors.SEEN, 30.0, 4.0, 2.0))
+        flags, seen = centre.step(0)
+        self.assertEqual(flags, errors.SEEN | errors.SIZE)
+        self.assertEqual((seen['range'], seen['length'], seen['width']), (30.0, 4.0 * 1.1, 1.0))
+        # The end facing the ego stays at 30 - 2 m: the centre is half the new length behind it.
+        flags, seen = near_end.step(0)
+        self.assertEqual(flags, errors.SEEN | errors.SIZE)
+        self.assertAlmostEqual(seen['range'] - seen['length'] / 2.0, 28.0, places=12)
+        self.assertAlmostEqual(shorter.step(0)[1]['range'], 30.0 - 0.4 + 1.0, places=12)
+        self.assertAlmostEqual(float(near_end.log()[0]['box.range_shift_m']), 0.2, places=12)
+        for run in (neutral, centre, shorter):
+            run.log()
 
     def test_identification_replaces_size_on_wrong_frames(self):
         entries = [{'type': 'identification', 'wrong_rate': 0.5, 'wrong_scale': 2.0, 'wrong_mean_s': 0.2},

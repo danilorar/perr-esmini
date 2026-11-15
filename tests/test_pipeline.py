@@ -4,6 +4,7 @@ Controller sources are never opened by these tests.
 """
 import csv
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -81,6 +82,128 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(element.get('name'), 'ExampleAEBController')
         self.assertEqual(properties['mode'], 'override')
         self.assertNotIn('timeGap', properties)
+
+
+def canonical(path):
+    """A scenario file as comparable bytes: no whitespace, no road path."""
+    root = ET.parse(path).getroot()
+    root.find('./RoadNetwork/LogicFile').set('filepath', '')
+    for element in root.iter():
+        element.text = (element.text or '').strip() or None
+        element.tail = None
+    return ET.tostring(root)
+
+
+class TascImportTests(unittest.TestCase):
+    """The teacher's case files lack the controller and, for cut-in, the stop trigger; see scenarios/tasc.py."""
+    SHARED = scenarios.FOLDER / 'data' / 'C_original_1554431.xosc'
+
+    def case(self, folder, group, *, swap=False, overlap=False, no_stop=False, beside=None):
+        """Write the shared file 1554431 in the teacher's format into <folder>/<group>/.
+
+        beside: object_2 drives 1 m ahead of object_1, starts 4 m to its side and closes in sideways, turned by this
+        many degrees.
+        """
+        tree = ET.parse(self.SHARED)
+        root = tree.getroot()
+        ego = root.find('./Entities/ScenarioObject[@name="object_1"]')
+        ego.remove(ego.find('ObjectController'))
+        for holder in root.iter('PrivateAction'):
+            for action in holder.findall('ControllerAction'):
+                holder.remove(action)
+        if swap:  # object_1 and object_2 trade what they do
+            other = {'object_1': 'object_2', 'object_2': 'object_1'}
+            for element in root.find('Storyboard').iter():
+                if element.get('entityRef') in other:
+                    element.set('entityRef', other[element.get('entityRef')])
+        if overlap:
+            groups = list(root.iter('ManeuverGroup'))
+            polylines = [group.find('.//Polyline') for group in groups]
+            parent = groups[1].find('.//Shape')
+            parent.remove(polylines[1])
+            parent.append(polylines[0])
+        if beside is not None:
+            vertices = {group.find('./Actors/EntityRef').get('entityRef'): group.findall('.//Polyline/Vertex')
+                        for group in root.iter('ManeuverGroup')}
+            pairs = list(zip(vertices['object_1'], vertices['object_2']))
+            for k, (mine, theirs) in enumerate(pairs):
+                p, q = mine.find('./Position/WorldPosition'), theirs.find('./Position/WorldPosition')
+                h, gap = float(p.get('h', 0)), 4.0 * (1 - k / (len(pairs) - 1))
+                q.set('x', str(float(p.get('x')) + math.cos(h) - math.sin(h) * gap))
+                q.set('y', str(float(p.get('y')) + math.sin(h) + math.cos(h) * gap))
+                q.set('h', str(h + math.radians(beside)))
+        if no_stop:
+            stop = root.find('./Storyboard/StopTrigger')
+            for child in list(stop):
+                stop.remove(child)
+        for sub in ('Xosc', 'Xodr'):
+            (folder / group / sub).mkdir(parents=True, exist_ok=True)
+        tree.write(folder / group / 'Xosc' / self.SHARED.name)
+        shutil.copyfile(self.SHARED.with_suffix('.xodr'), folder / group / 'Xodr' / 'C_original_1554431.xodr')
+
+    def imported(self, **kind):
+        from pipeline.scenarios import tasc
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        bicycle = kind.pop('bicycle', False)
+        self.case(folder, kind.pop('group', 'Rear-end car-car'), **kind)
+        rows = tasc.import_folder(folder, folder / 'local', bicycle=bicycle)
+        return folder / 'local', rows
+
+    def test_bicycle_copy_reshapes_only_object_2(self):
+        local, rows = self.imported(group='Rear-end car-cyclist', bicycle=True)
+        self.assertEqual([(row['key'], row['status']) for row in rows],
+                         [('tasc_cyclist_1554431', 'imported'), ('tasc_bicycle_1554431', 'imported')])
+        car = ET.parse(local / 'tasc_cyclist_1554431.xosc').getroot()
+        bike = ET.parse(local / 'tasc_bicycle_1554431.xosc').getroot()
+        shape = lambda root, name: (  # noqa: E731
+            root.find(f'./Entities/ScenarioObject[@name="{name}"]/Vehicle').get('vehicleCategory'),
+            root.find(f'./Entities/ScenarioObject[@name="{name}"]//Dimensions').attrib)
+        self.assertEqual(shape(bike, 'object_1'), shape(car, 'object_1'))
+        self.assertEqual(shape(bike, 'object_2'), ('bicycle', {'width': '0.6', 'length': '1.8', 'height': '1.7'}))
+        self.assertEqual(shape(car, 'object_2')[0], 'car')
+        self.assertEqual(read_json(local / 'scenarios.json')['tasc_bicycle_1554431']['group'], 'bicycle')
+
+    def test_conversion_restores_the_shared_file(self):
+        local, rows = self.imported()
+        self.assertEqual([(row['key'], row['status']) for row in rows], [('tasc_car_1554431', 'imported')])
+        self.assertEqual(canonical(local / 'tasc_car_1554431.xosc'), canonical(self.SHARED))
+        self.assertEqual((local / 'tasc_car_1554431.xodr').read_bytes(), self.SHARED.with_suffix('.xodr').read_bytes())
+
+    def test_object_2_striking_from_behind_is_skipped(self):
+        local, rows = self.imported(swap=True)
+        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'object_2 hits object_1 from behind'))
+        self.assertFalse((local / 'tasc_car_1554431.xosc').exists())
+
+    def test_side_and_crossing_contacts_are_skipped(self):
+        """HiDrive is a forward AEB, so only contacts at the ego's front stay."""
+        from pipeline.scenarios.tasc import SKIP_REASONS
+        for turn, kind in ((0.0, 'side'), (10.0, 'side'), (45.0, 'crossing')):
+            with self.subTest(turn=turn):
+                local, rows = self.imported(beside=turn)
+                self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', SKIP_REASONS[kind]))
+                self.assertEqual(read_json(local / 'scenarios.json'), {})
+
+    def test_missing_stop_trigger_is_added(self):
+        local, rows = self.imported(group='Cut-in', no_stop=True)
+        self.assertEqual((rows[0]['key'], rows[0]['status'], rows[0]['stop_trigger_added']), ('tasc_cutin_1554431', 'imported', True))
+        stop = ET.parse(local / 'tasc_cutin_1554431.xosc').getroot().find('./Storyboard/StopTrigger//SimulationTimeCondition')
+        self.assertEqual((stop.get('rule'), stop.get('value')), ('greaterThan', '10.0'))
+
+    def test_boxes_overlapping_from_the_start_are_skipped(self):
+        local, rows = self.imported(overlap=True)
+        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'the boxes overlap from the start'))
+        self.assertEqual(read_json(local / 'scenarios.json'), {})
+
+    def test_local_scenarios_load_but_stay_out_of_the_default_set(self):
+        local, _ = self.imported()
+        with mock.patch.object(scenarios, 'LOCAL', local):
+            scenario = scenarios.get('tasc_car_1554431')
+            self.assertEqual((scenario.ego, scenario.stop_time_s), ('object_1', 10.0))
+            self.assertEqual(scenarios.match(['gidas_1549178', 'tasc_car_*']), ['gidas_1549178', 'tasc_car_1554431'])
+            self.assertEqual({job['scenario'] for job in grid.expand({'seeds': 1})}, set(scenarios.all_scenarios()))
+            self.assertEqual([job['scenario'] for job in grid.expand({'scenarios': ['tasc_*']})], ['tasc_car_1554431'])
+            with self.assertRaises(ValueError):
+                scenarios.match(['tasc_cyclist_*'])
 
 
 class GridTests(unittest.TestCase):

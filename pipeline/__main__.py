@@ -1,4 +1,4 @@
-"""Command line: python -m pipeline setup | run | grid | list | replay"""
+"""Command line: python -m pipeline setup | run | grid | list | replay | import-tasc"""
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +34,23 @@ def command_list(_):
     print('Controllers:   ', ', '.join(controllers.all_controllers()))
     print('Error plugins: ', ', '.join(errors.all_plugins()))
     print('Scenarios:     ', ', '.join(scenarios.all_scenarios()))
+    local = scenarios.local_scenarios()
+    if local:
+        groups = {}
+        for key in local:
+            groups[key.rsplit('_', 1)[0]] = groups.get(key.rsplit('_', 1)[0], 0) + 1
+        print('Local:         ', ', '.join(f'{group}_* ({count})' for group, count in groups.items()))
+
+
+def command_import_tasc(args):
+    from . import scenarios
+    from .scenarios.tasc import import_folder
+    rows = import_folder(args.folder, scenarios.LOCAL, bicycle=args.bicycle)
+    for row in rows:
+        if row['status'] != 'imported':
+            print(f'skipped {row["group"]} {row["case"]}: {row["reason"]}')
+    done = [row for row in rows if row['status'] == 'imported']
+    print(f'{len(done)} of {len(rows)} imported into {scenarios.LOCAL}; report: import_report.csv there.')
 
 
 def command_replay(args):
@@ -70,6 +87,12 @@ def main():
     grid.set_defaults(function=command_grid)
 
     commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
+
+    tasc = commands.add_parser('import-tasc', help='convert TASC case folders into local scenarios (not in Git)')
+    tasc.add_argument('folder', help='folder with "Cut-in", "Rear-end car-car" and/or "Rear-end car-cyclist"')
+    tasc.add_argument('--bicycle', action='store_true',
+                      help='also write each cyclist case as tasc_bicycle_*, with object_2 as a bicycle-sized box')
+    tasc.set_defaults(function=command_import_tasc)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')
     replay.add_argument('run', help='results folder of the run')

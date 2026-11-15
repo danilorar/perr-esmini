@@ -106,7 +106,8 @@ commit.
 }
 ```
 
-Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, all scenarios run.
+Every combination of the `vary` values runs on every scenario with every seed. Without `scenarios`, the three shared
+scenarios run. `scenarios` also takes patterns such as `"tasc_car_*"` for imported TASC cases (see below).
 A key like `errors.detection.miss_rate` changes one setting of the entry with that `name` or `type`; the entry must
 already be in the list, from `base` or `set`. A `set` of `"errors"` replaces the whole list.
 `seeds` is a count (from 0), a range, or a list like `[1, 2]`; without it, seed 0 runs.
@@ -127,8 +128,9 @@ plugin gets the result of the one before it, so the order matters. To use one ty
 | Type | What the controller gets | Settings (default) |
 |---|---|---|
 | `size` | range + (scale - 1) * true range + bias | `scale` (1.0), `bias_m` (0.0) |
+| `box` | a box with length_scale * true length and width_scale * true width; `keep` says which point stays right: the centre (the gap is wrong by half the length error) or the end facing the ego (the gap is unchanged) | `length_scale` (1.0), `width_scale` (1.0), `keep` (`centre` or `near_end`) |
 | `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
-| `ou` | range + a correlated error that grows with distance | `mae_pct` (5.0, mean error at `reference_range_m`), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
+| `ou` | range + a correlated error that grows with distance, plus an optional constant bias with the same distance law | `mae_pct` (5.0, mean error at `reference_range_m`), `bias_pct` (0.0, > 0 reads too far), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
 | `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |
 | `template` | range + white noise; a starting point for new plugins | `sigma_m` (0.0) |
 
@@ -161,16 +163,25 @@ pipeline/
 configs/            example configurations
 experiments/        grids
 tests/              python -m unittest discover tests
-docs/               EXTENDING.md (add plugins, controllers, scenarios), EXPERIMENTS.md (grid log)
+docs/               EXTENDING.md (add plugins, controllers, scenarios), EXPERIMENTS.md (grid log),
+                    TASC_SCENARIOS.md (which TASC cases are used)
 AGENTS.md           rules for AI agents (CLAUDE.md loads it for Claude Code)
 ```
 
 Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`, `PerceptionModels.pdf`, `esmini`,
-`requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results).
+`requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results),
+`pipeline/scenarios/local/` (imported TASC cases).
 
 ## Good to know
 
 - `gidas_*` are the three scenario IDs. The data are TASC data, even where a file says GIDAS.
+- The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
+  are imported with `python -m pipeline import-tasc <folder>`. HiDrive is a forward AEB, so only cases where the ego's
+  front hits the other road user are kept: 119 of 149, as `tasc_car_*` (98) and `tasc_cyclist_*` (21) in
+  `pipeline/scenarios/local/`, outside Git. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
+  start are skipped; see `docs/TASC_SCENARIOS.md`, and `import_report.csv` next to the cases for each file's reason.
+  The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
+  bicycle-sized box.
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
 - macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.
