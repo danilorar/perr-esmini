@@ -4,6 +4,7 @@ Controller sources are never opened by these tests.
 """
 import csv
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -97,8 +98,12 @@ class TascImportTests(unittest.TestCase):
     """The teacher's case files lack the controller and, for cut-in, the stop trigger; see scenarios/tasc.py."""
     SHARED = scenarios.FOLDER / 'data' / 'C_original_1554431.xosc'
 
-    def case(self, folder, group, *, swap=False, overlap=False, no_stop=False):
-        """Write the shared file 1554431 in the teacher's format into <folder>/<group>/."""
+    def case(self, folder, group, *, swap=False, overlap=False, no_stop=False, beside=None):
+        """Write the shared file 1554431 in the teacher's format into <folder>/<group>/.
+
+        beside: object_2 drives 1 m ahead of object_1, starts 4 m to its side and closes in sideways, turned by this
+        many degrees.
+        """
         tree = ET.parse(self.SHARED)
         root = tree.getroot()
         ego = root.find('./Entities/ScenarioObject[@name="object_1"]')
@@ -117,6 +122,16 @@ class TascImportTests(unittest.TestCase):
             parent = groups[1].find('.//Shape')
             parent.remove(polylines[1])
             parent.append(polylines[0])
+        if beside is not None:
+            vertices = {group.find('./Actors/EntityRef').get('entityRef'): group.findall('.//Polyline/Vertex')
+                        for group in root.iter('ManeuverGroup')}
+            pairs = list(zip(vertices['object_1'], vertices['object_2']))
+            for k, (mine, theirs) in enumerate(pairs):
+                p, q = mine.find('./Position/WorldPosition'), theirs.find('./Position/WorldPosition')
+                h, gap = float(p.get('h', 0)), 4.0 * (1 - k / (len(pairs) - 1))
+                q.set('x', str(float(p.get('x')) + math.cos(h) - math.sin(h) * gap))
+                q.set('y', str(float(p.get('y')) + math.sin(h) + math.cos(h) * gap))
+                q.set('h', str(h + math.radians(beside)))
         if no_stop:
             stop = root.find('./Storyboard/StopTrigger')
             for child in list(stop):
@@ -156,11 +171,20 @@ class TascImportTests(unittest.TestCase):
 
     def test_object_2_striking_from_behind_is_skipped(self):
         local, rows = self.imported(swap=True)
-        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'object_2 strikes from behind; the road follows object_1'))
+        self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', 'object_2 hits object_1 from behind'))
         self.assertFalse((local / 'tasc_car_1554431.xosc').exists())
 
-    def test_cut_in_keeps_object_1_and_gets_a_stop_trigger(self):
-        local, rows = self.imported(group='Cut-in', swap=True, no_stop=True)
+    def test_side_and_crossing_contacts_are_skipped(self):
+        """HiDrive is a forward AEB, so only contacts at the ego's front stay."""
+        from pipeline.scenarios.tasc import SKIP_REASONS
+        for turn, kind in ((0.0, 'side'), (10.0, 'side'), (45.0, 'crossing')):
+            with self.subTest(turn=turn):
+                local, rows = self.imported(beside=turn)
+                self.assertEqual((rows[0]['status'], rows[0]['reason']), ('skipped', SKIP_REASONS[kind]))
+                self.assertEqual(read_json(local / 'scenarios.json'), {})
+
+    def test_missing_stop_trigger_is_added(self):
+        local, rows = self.imported(group='Cut-in', no_stop=True)
         self.assertEqual((rows[0]['key'], rows[0]['status'], rows[0]['stop_trigger_added']), ('tasc_cutin_1554431', 'imported', True))
         stop = ET.parse(local / 'tasc_cutin_1554431.xosc').getroot().find('./Storyboard/StopTrigger//SimulationTimeCondition')
         self.assertEqual((stop.get('rule'), stop.get('value')), ('greaterThan', '10.0'))

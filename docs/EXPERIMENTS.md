@@ -89,7 +89,11 @@ so this file is the shared record of what was run and what it showed.
 - Source: the teacher's upload of 2026-11-11 (Cut-in 7, Rear-end car-car 110, Rear-end car-cyclist 32 files), imported
   with `python -m pipeline import-tasc`. The files stay out of Git (teacher data, public repository); each registry
   entry in `pipeline/scenarios/local/scenarios.json` keeps the SHA-1 of its source file.
-- 130 of 149 imported. Skipped: 7 whose boxes overlap from the start (car-car 1553190, 1556158, 1571692; cut-in 1539179,
+- Scope changed on 2026-11-15: `import-tasc` now keeps only cases where the ego's front runs into the other road user,
+  119 of 149 (car-car 98, cyclist 21); see `docs/TASC_SCENARIOS.md`. The runs recorded here used the import of
+  2026-11-11 below, which also held 5 cut-in, 3 car-car and 3 cyclist cases that are now skipped. All 11 crashed without
+  error; the results on cases that are safe without error are unchanged.
+- 130 of 149 imported on 2026-11-11. Skipped: 7 whose boxes overlap from the start (car-car 1553190, 1556158, 1571692; cut-in 1539179,
   1567320; cyclist 1587666, 1614846), 6 car-car copies of cut-in cases (the teacher's cut-in `_s` files swap the roles
   and have their own road), and 6 cyclist cases where object_2, the car, strikes the cyclist object_1 from behind.
 - Those 6 were first run with the trajectories swapped: in 5 the ego jumped about 10 m along the road at brake onset.

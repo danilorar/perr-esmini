@@ -8,11 +8,16 @@ The case files lack what a pipeline scenario needs, so each file gets:
 - an ObjectController on the ego with the HiDrive properties of the three shared files, and an
   ActivateControllerAction in its Init, where the shared files have it;
 - a 10 s stop trigger when the storyboard has none (the cut-in files).
-The ego is object_1. Skipped: car-car and cyclist files where object_2 is the rear vehicle at first contact (the road
-follows object_1's path, and HiDrive jumps along that road when it brakes the other vehicle: tried 2026-11-11, 5 of 6
-cyclist cases jumped about 10 m at brake onset); files whose boxes overlap from the start; car-car copies of cut-in
-cases, whose roles and road the teacher set in the cut-in "_s" file. Cut-in files keep object_1, the vehicle whose
-lane is entered.
+The ego is object_1. In cut-in files object_1 is the vehicle whose lane is entered.
+
+HiDrive is a forward AEB: it brakes for a road user ahead in its own lane. Only cases where the front of object_1 runs
+into object_2 are imported (see docs/TASC_SCENARIOS.md). Skipped, with the reason in import_report.csv:
+- files whose boxes overlap from the start;
+- object_2 hits object_1 from behind. Swapping the roles does not help: the road follows object_1's path, and HiDrive
+  jumps along that road when it brakes the other vehicle (tried 2026-11-11, 5 of 6 cyclist cases jumped about 10 m);
+- object_2 comes in from the side (cut-in): at first contact it touches the side of object_1, not its front;
+- object_2 crosses: the headings differ by more than CROSSING_DEG;
+- car-car copies of cut-in cases, whose roles and road the teacher set in the cut-in "_s" file.
 """
 import csv
 import hashlib
@@ -34,6 +39,14 @@ BICYCLE = {'category': 'bicycle', 'length': '1.8', 'width': '0.6', 'height': '1.
 CONTROLLER = 'HiDriveController'
 PROPERTIES = (('timeGap', '1.0'), ('mode', 'additive'), ('ADF_enabled', 'true'), ('Speed_limit', '100'))
 STOP_TIME_S = '10.0'
+# Heading difference at first contact above which object_2 counts as crossing. In the 2026-11-11 upload the front
+# contacts stay under 12 degrees and the crossing cases are at 46, 58 and 100.
+CROSSING_DEG = 30.0
+SKIP_REASONS = {
+    'rear': 'object_2 hits object_1 from behind',
+    'side': 'object_2 comes in from the side (cut-in): at first contact it touches the side of object_1',
+    'crossing': f'object_2 crosses: headings differ by more than {CROSSING_DEG:g} degrees at first contact',
+}
 
 
 def case_id(path):
@@ -74,18 +87,32 @@ def overlap(a, b):
 
 
 def first_contact(root):
-    """(index, object_2 ahead of object_1 at contact) for the first step the two boxes overlap, or None."""
+    """(index, kind) for the first step the two boxes overlap, or None.
+
+    kind tells where object_2 meets object_1, seen from object_1: 'crossing' (headings differ by more than
+    CROSSING_DEG), 'rear' (the centre of object_2 is behind that of object_1), 'side' (object_2 is ahead, but the boxes
+    overlap least across object_1's side, the face just crossed) or 'front' (object_1 runs into object_2 ahead).
+    """
     dims = {}
     for item in root.findall('./Entities/ScenarioObject'):
         box = item.find('.//BoundingBox/Dimensions')
         dims[item.get('name')] = (float(box.get('length')), float(box.get('width')))
     storyboard = root.find('Storyboard')
     one, two = trajectory(storyboard, 'object_1'), trajectory(storyboard, 'object_2')
+    (length_1, width_1), (length_2, width_2) = dims['object_1'], dims['object_2']
     for i, (p, q) in enumerate(zip(one, two)):
-        if overlap(corners(*p[1:], *dims['object_1']), corners(*q[1:], *dims['object_2'])):
-            heading = math.atan2(math.sin(p[3]) + math.sin(q[3]), math.cos(p[3]) + math.cos(q[3]))
-            ahead = (q[1] - p[1]) * math.cos(heading) + (q[2] - p[2]) * math.sin(heading)
-            return i, ahead > 0
+        if overlap(corners(*p[1:], length_1, width_1), corners(*q[1:], length_2, width_2)):
+            turn = math.remainder(q[3] - p[3], 2 * math.pi)
+            if abs(math.degrees(turn)) > CROSSING_DEG:
+                return i, 'crossing'
+            c, s = math.cos(p[3]), math.sin(p[3])
+            ahead, aside = c * (q[1] - p[1]) + s * (q[2] - p[2]), -s * (q[1] - p[1]) + c * (q[2] - p[2])
+            if ahead < 0:
+                return i, 'rear'
+            cos_t, sin_t = abs(math.cos(turn)), abs(math.sin(turn))
+            depth_ahead = length_1 / 2 + length_2 / 2 * cos_t + width_2 / 2 * sin_t - ahead
+            depth_aside = width_1 / 2 + length_2 / 2 * sin_t + width_2 / 2 * cos_t - abs(aside)
+            return i, 'side' if depth_aside < depth_ahead else 'front'
     return None
 
 
@@ -166,12 +193,12 @@ def convert(xosc, group, target, *, skip_ids=(), bicycle=False):
     if contact is None:
         row['reason'] = 'the boxes never touch'
         return row
-    index, two_ahead = contact
+    index, kind = contact
     if index == 0:
         row['reason'] = 'the boxes overlap from the start'
         return row
-    if group != 'cutin' and not two_ahead:
-        row['reason'] = 'object_2 strikes from behind; the road follows object_1'
+    if kind != 'front':
+        row['reason'] = SKIP_REASONS[kind]
         return row
     row['recorded_contact'] = True
     if bicycle:

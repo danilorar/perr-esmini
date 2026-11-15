@@ -163,7 +163,8 @@ pipeline/
 configs/            example configurations
 experiments/        grids
 tests/              python -m unittest discover tests
-docs/               EXTENDING.md (add plugins, controllers, scenarios), EXPERIMENTS.md (grid log)
+docs/               EXTENDING.md (add plugins, controllers, scenarios), EXPERIMENTS.md (grid log),
+                    TASC_SCENARIOS.md (which TASC cases are used)
 AGENTS.md           rules for AI agents (CLAUDE.md loads it for Claude Code)
 ```
 
@@ -175,8 +176,10 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
 
 - `gidas_*` are the three scenario IDs. The data are TASC data, even where a file says GIDAS.
 - The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
-  are imported with `python -m pipeline import-tasc <folder>`. They become `tasc_car_*`, `tasc_cutin_*` and
-  `tasc_cyclist_*` in `pipeline/scenarios/local/`, outside Git; `import_report.csv` there lists skipped cases and why.
+  are imported with `python -m pipeline import-tasc <folder>`. HiDrive is a forward AEB, so only cases where the ego's
+  front hits the other road user are kept: 119 of 149, as `tasc_car_*` (98) and `tasc_cyclist_*` (21) in
+  `pipeline/scenarios/local/`, outside Git. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
+  start are skipped; see `docs/TASC_SCENARIOS.md`, and `import_report.csv` next to the cases for each file's reason.
   The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
   bicycle-sized box.
 - The course does not allow a Kalman filter, so controllers get the observations directly.
