@@ -1,5 +1,9 @@
 # 空间 Markov 检测误差模型 v1 / Spatial Markov detection error model v1
 
+149 个 TASC 场景的最新实验使用 HiDrive 和 esmini 原生 AEB。运行设计、原生 AEB 适配和完整汇总见[双语实验报告](DETECTION_SENSITIVITY_149.md)。
+
+The latest 149-scenario TASC experiment uses HiDrive and esmini native AEB. See the [bilingual experiment report](DETECTION_SENSITIVITY_149.md) for the run design, native AEB adaptation and results.
+
 ## 模型 / Model
 
 **中文。** [`detection_spatial_v1`](../pipeline/errors/detection_spatial_v1.py) 在目标列表层模拟连续漏检。对每个目标，模型使用当前感知帧的真值中心距离 $r_t$（m）、目标中心相对自车朝向的方位角 $\theta_t$（°）和上一感知帧的检测结果 $D_{t-1}$。$D_t=1$ 表示目标出现在当前感知帧中，$D_t=0$ 表示目标漏检。
@@ -26,14 +30,14 @@ $$
 
 **English.** At fixed geometry, $p_t=\alpha_t/(\alpha_t+\beta_t)$ is the stationary miss fraction and $T_{\mathrm{miss},t}$ is the mean duration of a consecutive miss. The code computes the baseline transitions with [`markov_parameters`](../pipeline/errors/frames.py) and scales both by the same exponential factor. At fixed $p_t$, slower recovery gives fewer, longer miss episodes. With changing geometry, the observed miss fraction depends on the sequence of frame transitions. For $p_t=0$, the helper sets $\alpha_t=0,\ \beta_t=1$.
 
-| 参数 / Setting | 符号 / Symbol | 批量实验值 / Batch value |
+| 参数 / Setting | 符号 / Symbol | 149 场景批量值 / 149-scenario batch value |
 | --- | --- | ---: |
 | `base_miss_rate` | $p_0$ | 0.10 |
 | `range_start_m` | $r_0$ | 20 m |
 | `angle_start_deg` | $\theta_0$ | 5° |
 | `range_slope_per_m` | $a_r$ | 0.0025 m⁻¹ |
 | `angle_slope_per_deg` | $a_\theta$ | 0.005 deg⁻¹ |
-| `miss_mean_s` | $T_0$ | 0.5 s |
+| `miss_mean_s` | $T_0$ | 0.1, 0.5, 1.0 s |
 | `recovery_range_decay_per_m` | $k_r$ | $\ln(2)/10$ m⁻¹ |
 | `recovery_angle_decay_per_deg` | $k_\theta$ | $\ln(2)/10$ deg⁻¹ |
 | `sensor_period_s` | $\Delta t_{\mathrm{sensor}}$ | 0.05 s |
@@ -49,7 +53,7 @@ flowchart LR
     Truth["esmini ground truth / 场景真值"] --> Bridge["Perception bridge / 感知桥接"]
     Bridge --> Model["Detection plugin: range, bearing, previous frame / 检测模型"]
     Model --> List["Controller observations / 控制器目标列表"]
-    List --> Control["HiDrive or example AEB / 控制器"]
+    List --> Control["Pipeline controller / Pipeline 控制器"]
     Control --> Truth
     Truth --> Metrics["Collision, gap, TTC / 真值指标"]
     Model --> Log["Perception trace / 感知日志"]
@@ -58,6 +62,10 @@ flowchart LR
 **中文。** esmini 每 0.01 s 通过桥接把自车和目标的真值发送给 Python。插件每 0.05 s 对每个目标抽样一次，抽样由 seed、感知帧号和目标 ID 决定。同一感知帧内的五个控制步复用检测结果。漏检时，插件把目标标记为 `seen=False`，桥接在该控制步隐藏该目标。控制器得到准确的自车状态和经过检测门控的目标列表。控制步结束后，桥接恢复目标真值，碰撞、间距和 TTC 使用仿真真值计算。检测插件单独启用时，检出的目标保留原始位置、尺寸和类别。
 
 **English.** At each 0.01 s control step, the bridge sends true ego and target states from esmini to Python. The plugin draws once per target every 0.05 s using the seed, sensor frame index and target ID. The five control steps in that frame share the detection outcome. A missed target is marked `seen=False` and the bridge hides it during the controller step. The controller receives exact ego state and the resulting target list. The bridge restores target truth after the controller step, and collision, gap and TTC use simulation truth. With detection as the sole plugin, reported targets retain their original position, size and class.
+
+**中文。** 原生 AEB 的运行器每 0.05 s 在 esmini 理想传感器的目标列表上应用漏检。空间组调用同一个插件生成漏检标记，控制循环每 0.01 s 读取缓存的感知列表。模型在目标列表层模拟假阴性，假阳性需要额外的目标生成机制。
+
+**English.** The native AEB runner applies dropout to the esmini ideal-sensor object list every 0.05 s. The spatial groups call the same plugin for miss flags, and the control loop reads the cached list every 0.01 s. The model simulates object-list false negatives. False positives require a separate mechanism to generate objects.
 
 ## 运行与输出 / Running and outputs
 
@@ -83,7 +91,7 @@ python -m pipeline grid experiments/detection_spatial_v1_100.json --workers 8
 
 **English.** The grid covers three TASC scenarios, HiDrive and `example_aeb`, and three error models with 100 seeds per group, for 1,800 runs. The additional 900 native AEB runs used the historical esmini controller and a local experiment adapter. The adapter calls the same Python plugin for each ideal sensor frame and removes missed objects from the native AEB's input list. The table includes those native AEB runs.
 
-## 三场景结果 / Three-scenario results
+## 历史三场景结果 / Historical three-scenario results
 
 碰撞次数，每组 100 次。IID 使用 10% 漏检率，固定 Markov 使用 10% 稳态漏检率和 0.5 s 平均连续漏检时长。
 
