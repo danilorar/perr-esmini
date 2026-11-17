@@ -1,0 +1,12 @@
+{
+  "name": "size_bearing_width",
+  "description": "Does the controller use the perceived target width? Width alone is scaled by 0.5, 0.75, 1.25 or 1.5 (no range change), on the car-car, cyclist (car-sized box) and bicycle (0.6 m wide box, import-tasc --bicycle) cases. example_aeb uses width to decide whether a target is in its path; whether HiDrive does is not known. No randomness. Sensitivity levels, not sensor values. 700 runs.",
+  "scenarios": ["tasc_car_*", "tasc_cyclist_*", "tasc_bicycle_*"],
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}},
+    {"name": "width_0.50", "set": {"errors": [{"type": "size_bearing", "width_mu": [-0.69314718056, 0, 0, 0], "parameter_source": "assumed sensitivity levels, not sensor values"}]}},
+    {"name": "width_0.75", "set": {"errors": [{"type": "size_bearing", "width_mu": [-0.287682072452, 0, 0, 0], "parameter_source": "assumed sensitivity levels, not sensor values"}]}},
+    {"name": "width_1.25", "set": {"errors": [{"type": "size_bearing", "width_mu": [0.223143551314, 0, 0, 0], "parameter_source": "assumed sensitivity levels, not sensor values"}]}},
+    {"name": "width_1.50", "set": {"errors": [{"type": "size_bearing", "width_mu": [0.405465108108, 0, 0, 0], "parameter_source": "assumed sensitivity levels, not sensor values"}]}}
+  ]
+}

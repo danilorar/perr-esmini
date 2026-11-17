@@ -23,6 +23,9 @@ so this file is the shared record of what was run and what it showed.
 |---|---|---|---|---|---|---|
 | `smoke` | Does the pipeline work end to end? | 6 | 2026-11-08 | Windows 11, `247f6cc` | 6/6 finish; only `gidas_1554431` without error crashes | Works; same numbers before and after a fresh setup from `main` |
 | `size_bearing_smoke` | Does the physical-size plugin pass through neutrally and run with assumed distance/azimuth coefficients? | 9 | 2026-11-12 | Windows 11 x64 | 9 completed; neutral ego outputs equal all 3 references; 6 road-geometry warnings | Integration passed; coefficients uncalibrated |
+| `size_bearing_bias` | A constant width error passed to the range like a camera that ranges from an assumed size (`range_coupling: width`): where do the TASC car-car cases start to crash? | 686 | | | | |
+| `size_bearing_random` | Random correlated width error, passed to the range, flat or growing with distance: does the crash rate follow the spread as for OU, and does it matter where in distance the error is large? | 5978 | | | | |
+| `size_bearing_width` | Width alone, no range change: does the controller use the perceived width? | 700 | | | | |
 | `range_factors` | Size, identification, detection and OU errors, each alone: which matter? | 1899 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios: target vanishing while missed 30/400 crash (95% CI 5.3–10.5%); wrong class ×1.77 at 20% 9/60 (8.1–26.1%), at 5% 1/60; size scale 1.1 1/2, 1.2 2/2; OU 0.8% and 1.4% 0/60; all other cells 0 | At these assumed values detection, identification (×1.77) and size (from +10%) can cause crashes, OU at 0.8–1.4% does not. Same as the 2026-11-01 studio sweep, run by run |
 | `detection_seeds_50_99` | Extra seeds 50–99 for the detection groups of `range_factors` | 600 | | | | |
 | `ou_size` | How large must the OU error be before safety changes? | 282 | 2026-11-08 | Windows 11, `247f6cc` | Safe scenarios: 0/60 at 5%, 5/60 at 10% (3.6–18.1%), 8/60 at 20% (6.9–24.2%). `gidas_1554431`: 17, 14, 12 of 30 crash, median impact 17.5, 19.6, 24.7 km/h (no error 10.5) | Safe scenarios start crashing between 5% and 10%; on `gidas_1554431` fewer but harder crashes as the error grows. Sizes are sensitivity levels, not sensor values. Same as the 2026-11-03 studio sweep, run by run |
@@ -135,3 +138,34 @@ azimuths, and one seed per cell cannot establish a collision probability. Assume
 coefficients and model details are in SIZE_BEARING.md. Separately, the integration test
 must show that increased perceived length reaches the example AEB and changes its
 braking time while true dimensions remain unchanged.
+
+### `size_bearing_bias`, `size_bearing_random`, `size_bearing_width` (decision rules written 2026-11-17, before running)
+
+Needed first: `python -m pipeline import-tasc <folder>`, plus `--bicycle` for `size_bearing_width`. All three use
+`size_bearing` with assumed levels; `parameter_source` says so in every run. The "safe cases" are the 81 car-car cases
+that do not crash without error (`tasc_baseline`). Report the range error at braking start in metres, so the levels
+compare with `tasc_tolerance` and `ou_bias`.
+
+- `size_bearing_bias`: width factor 0.8, 0.9, 0.95, 1.05, 1.1, 1.2, `range_coupling: width`, no randomness, one run per case
+  and level. With sigma 0 this equals the `size` plugin at the same scale (tested), so it is the camera size law on the
+  TASC cases, which `tasc_tolerance` ran only with the `ou` distance law.
+  - Rule: per level, the number of safe cases that crash, and the smallest factor with a new crash on each side of 1.
+    Prediction from `ou_bias`: a too-far reading (factor > 1) crashes, a too-near one does not. If a factor of 1.05 or
+    0.95 already adds a crash, report it as more harmful than the `ou` bias of the same percentage, as the size law
+    scales with the whole range. For the 17 cases that crash without error, the change in median impact speed.
+- `size_bearing_random`: width log-ratio standard deviation 5, 10, 20% at 50 m, tau 0.5 s, `range_coupling: width`,
+  seeds 1–10 per case. `flat`: same spread at every distance. `growing`: spread × (1 + r/50) / 2, so half at 0 m, equal
+  at 50 m, double at 150 m. The noise stream depends only on seed, plugin label and target, so `flat` and `growing`
+  at the same level use the same draws and differ only in how far each draw is scaled.
+  - Rule 1: crash rate of the safe cases per law and level, with a Wilson 95% CI, beside `tasc_tolerance` OU 5/10/20%
+    (1.2, 6.8, 16.8%) and matched by the error at braking start, not by the percentage.
+  - Rule 2, paired: per level, count the case-seed pairs that crash only with `flat` and only with `growing`; the
+    distance law matters if an exact two-sided sign test on those counts gives p < 0.05. Prediction: braking starts
+    well inside 50 m, where `growing` is smaller, so `growing` crashes less. That would mean the near-range error drives
+    safety, not the error at long range.
+- `size_bearing_width`: width factor 0.5, 0.75, 1.25, 1.5 alone, no range change, no randomness, on car-car,
+  cyclist (car-sized box) and bicycle (0.6 m wide) cases.
+  - Rule: the controller uses the perceived width if, at any level, a case changes its collision outcome or its
+    first trigger time by more than 0.01 s against `no_error`. Otherwise record "no effect of width alone up to ±50%"
+    as a negative result. Car-car cases, in lane, are the control; bicycle cases are where a narrower width could take
+    an offset cyclist out of the path. `example_aeb` does use width for that; whether HiDrive does is not known (black box).

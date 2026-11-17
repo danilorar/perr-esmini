@@ -1,0 +1,14 @@
+{
+  "name": "size_bearing_bias",
+  "description": "A constant error in the perceived target width, passed to the range as a camera that ranges from an assumed size does (range_coupling: width, range scaled by the width factor). Where on the TASC car-car cases does it start to crash, and is reading too far (width factor > 1) worse than too near? No randomness, one run per case and level. With sigma 0 this equals the size plugin at the same scale (tested), so it is the size law on the TASC cases. Sensitivity levels, not sensor values. 686 runs.",
+  "scenarios": ["tasc_car_*"],
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "width_0.80", "set": {"errors": [{"type": "size_bearing", "width_mu": [-0.223143551314, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]},
+    {"name": "width_0.90", "set": {"errors": [{"type": "size_bearing", "width_mu": [-0.105360515658, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]},
+    {"name": "width_0.95", "set": {"errors": [{"type": "size_bearing", "width_mu": [-0.051293294388, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]},
+    {"name": "width_1.05", "set": {"errors": [{"type": "size_bearing", "width_mu": [0.048790164169, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]},
+    {"name": "width_1.10", "set": {"errors": [{"type": "size_bearing", "width_mu": [0.095310179804, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]},
+    {"name": "width_1.20", "set": {"errors": [{"type": "size_bearing", "width_mu": [0.182321556794, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]}, "seeds": [1]}
+  ]
+}
