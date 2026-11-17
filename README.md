@@ -156,6 +156,7 @@ pipeline/
   grid.py           many simulations
   results.py        result tables and metrics
   plots.py          plots of one run
+  fit_kradar.py     error parameters fitted from K-Radar boxes (fit-kradar)
   controllers/      one folder per controller
   errors/           error plugins
   scenarios/        scenario files
@@ -182,6 +183,12 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
   start are skipped; see `docs/TASC_SCENARIOS.md`, and `import_report.csv` next to the cases for each file's reason.
   The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
   bicycle-sized box.
+- `python -m pipeline fit-kradar <data folder> --meta <folder>` fits the lead's distance error (bias, spread, correlation
+  time) and its misses from the teacher's K-Radar tables, reference boxes against detector boxes, on K-Radar's test
+  frames only, and checks the fit on half of the recordings. It writes `output/kradar/fit/summary.md`. It needs
+  `pip install pandas pyarrow`. The meta folder holds K-Radar's `train.txt` and `test.txt` (`resources/split` in
+  github.com/kaist-avelab/K-Radar) and `sequences.csv` (weather per sequence, Table 5 of the K-Radar paper). The K-Radar
+  tables stay outside Git (K-Radar licence).
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
 - macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.
