@@ -1,0 +1,3 @@
+{"scenario": "gidas_1549178", "seed": 5,
+ "errors": [{"type": "fitted", "profile": "pvrcnn", "condition": "range", "lost_target": "predict",
+             "lost_target_motion": "frozen", "lost_target_distance": "frozen_object"}]}

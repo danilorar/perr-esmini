@@ -24,6 +24,9 @@ white share come from the autocovariance of e along each lead's track (lags up t
 per target and an OU with a tau of several seconds look the same over these lags, so the OU part holds both.
 Sizes: detector length and width over the reference's, per class, for every reference vehicle in the detector area.
 
+parameters.json also lists the lengths of the lead's miss runs, which the fitted error plugin draws from. A run cut off
+by the end of a track or of a block of test frames counts with the length seen, so long losses are if anything short.
+
 Check: fit on half of the recordings of each weather group (A) and compare with the other half (B).
 """
 from pathlib import Path
@@ -303,7 +306,8 @@ def fit_detector(data, meta, detector):
     both, correlation, stretch = check(lead)
     return {'table': tables(lead), 'sizes': size_table(pairs), 'ghosts': ghosts(unpaired, reference, test_frames),
             'check': both, 'correlation': correlation, 'stretch': stretch, 'shift': shift, 'lead_rows': len(lead),
-            'vehicle_rows': len(pairs), 'vehicle_hit': float(pairs.hit.mean())}
+            'vehicle_rows': len(pairs), 'vehicle_hit': float(pairs.hit.mean()),
+            'miss_runs_frames': sorted(int(n) for n in miss_stretches(lead))}
 
 
 def markdown(frame, digits=3):
@@ -361,7 +365,9 @@ def run(data, meta, detectors, output):
         result['check'].to_csv(folder / 'check_halves.csv', index=False)
         result['correlation'].to_csv(folder / 'check_correlation.csv', index=False)
         result['stretch'].to_csv(folder / 'check_miss_stretches.csv', index=False)
-        parameters[detector] = {'frame_shift_m': result['shift'], 'cells': result['table'].to_dict('records'),
+        parameters[detector] = {'frame_period_s': DT_S, 'frame_shift_m': result['shift'],
+                                'cells': result['table'].to_dict('records'),
+                                'miss_runs_frames': result['miss_runs_frames'],
                                 'sizes': result['sizes'].to_dict('records'), 'ghosts': result['ghosts']}
         halves = result['check'][['cell', 'rows_A', 'rows_B', 'b_m_A', 'b_m_B', 'sd_m_A', 'sd_m_B', 'tau_s_A', 'tau_s_B',
                                   'p_miss_A', 'p_miss_B', 't_miss_s_A', 't_miss_s_B', 'B_inside_A_90pct']]

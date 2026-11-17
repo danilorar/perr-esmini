@@ -132,10 +132,12 @@ plugin gets the result of the one before it, so the order matters. To use one ty
 | `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
 | `ou` | range + a correlated error that grows with distance, plus an optional constant bias with the same distance law | `mae_pct` (5.0, mean error at `reference_range_m`), `bias_pct` (0.0, > 0 reads too far), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
 | `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |
+| `fitted` | range + a bias, an OU error and white noise per 0.1 s frame, and missed frames whose lengths are drawn from the log, all with the values `fit-kradar` fitted (see below); a missed frame is handled as in `detection` | `parameters` (`output/kradar/fit/parameters.json`), `profile` (a detector in that file, such as `asf`), `condition` (`all`, `range`, `normal`, `rain`, `fog` or `snow`), `range_error` (true), `misses` (true), `lost_target`, `lost_target_motion`, `lost_target_distance` (as in `detection`) |
 | `template` | range + white noise; a starting point for new plugins | `sigma_m` (0.0) |
 
-Put `identification` before `size`, and `detection` last, so its prediction starts from the range with all other
-errors. The docstring at the top of each file gives the details.
+Put `identification` before `size`, and `detection` or `fitted` last, so the prediction starts from the range with all
+other errors. `fitted` replaces `ou` and `detection`; do not stack them. The docstring at the top of each file gives
+the details.
 
 How it works: before each controller step, esmini sends the true state of every object to Python. The plugins change
 what the controller should see, and esmini moves the targets there for that one step and puts them back right after.
@@ -185,7 +187,8 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
   bicycle-sized box.
 - `python -m pipeline fit-kradar <data folder> --meta <folder>` fits the lead's distance error (bias, spread, correlation
   time) and its misses from the teacher's K-Radar tables, reference boxes against detector boxes, on K-Radar's test
-  frames only, and checks the fit on half of the recordings. It writes `output/kradar/fit/summary.md`. It needs
+  frames only, and checks the fit on half of the recordings. It writes `output/kradar/fit/summary.md` and the
+  `parameters.json` that the `fitted` plugin reads (`configs/fitted.json` is an example). It needs
   `pip install pandas pyarrow`. The meta folder holds K-Radar's `train.txt` and `test.txt` (`resources/split` in
   github.com/kaist-avelab/K-Radar) and `sequences.csv` (weather per sequence, Table 5 of the K-Radar paper). The K-Radar
   tables stay outside Git (K-Radar licence).
