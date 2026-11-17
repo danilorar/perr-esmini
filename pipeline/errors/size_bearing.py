@@ -9,8 +9,19 @@ v = (sin(bearing)/sin(bearing_ref))**2:
 The paired, unit-variance Gaussian processes z have an exact discrete OU
 transition. Coefficients are assumptions until fitted to dimension estimates
 and ground truth. This is not a camera renderer or a calibrated sensor model.
-Only perceived length/width are changed, using the existing SIZE bridge flag.
 See docs/SIZE_BEARING.md for units, domain, clipping and calibration.
+
+How a dimension error reaches the range (both off by default, so the plugin then
+changes only perceived length/width, using the existing SIZE bridge flag):
+    keep            centre: the box centre stays, so each end moves by half the length
+                    change (the same as box keep=centre).
+                    near_end: the end facing the ego stays; the range moves by half the
+                    length change times |cos| of target heading to line of sight (the
+                    same as box keep=near_end).
+    range_coupling  none, width or length: a camera that ranges from an assumed object
+                    size reads the range wrong by the same factor as that dimension:
+                    range += (output_k/input_k - 1) * true range (the law of size.py).
+The two range changes add.
 """
 import copy
 import math
@@ -35,8 +46,11 @@ SETTINGS = {
     'length_width_correlation': 0.0,
     'max_abs_log_error': math.log(4.0),
     'only_correct_class': True,
+    'keep': 'centre',
+    'range_coupling': 'none',
     'parameter_source': 'assumed sensitivity parameters; not calibrated',
 }
+CHOICES = {'keep': ('centre', 'near_end'), 'range_coupling': ('none', 'width', 'length')}
 RANGES = {
     'reference_distance_m': (0.1, 10000),
     'reference_bearing_deg': (1, 89),
@@ -59,6 +73,7 @@ LOG = (
     'length_mu', 'width_mu', 'length_sigma', 'width_sigma',
     'length_z', 'width_z', 'length_raw_log_error', 'width_raw_log_error',
     'length_clipped', 'width_clipped', 'length_error_m', 'width_error_m',
+    'range_shift_m', 'range_coupling_m',
 )
 
 
@@ -151,6 +166,7 @@ class Error:
             reason = ('outside_domain' if not in_domain else
                       'wrong_class' if settings['only_correct_class'] and not target['class_correct'] else '')
             before = {k: target[k] for k in ('length', 'width')}
+            factor = {'length': 1.0, 'width': 1.0}
             note = dict(distance_m=distance, bearing_deg=math.degrees(bearing), in_domain=int(in_domain),
                         applied=int(not reason), skip_reason=reason,
                         true_length_m=truth['length'], true_width_m=truth['width'],
@@ -164,13 +180,35 @@ class Error:
                     raw = mu + sigma * z
                     limit = settings['max_abs_log_error']
                     used = max(-limit, min(limit, raw))
-                    target[dimension] = before[dimension] * math.exp(used)
+                    factor[dimension] = math.exp(used)
+                    target[dimension] = before[dimension] * factor[dimension]
                     note.update({dimension + '_mu': mu, dimension + '_sigma': sigma, dimension + '_z': z,
                                  dimension + '_raw_log_error': raw, dimension + '_clipped': int(used != raw)})
+            shift, coupling = self.range_change(ego, target, before, factor) if not reason else (0.0, 0.0)
+            note.update(range_shift_m=shift, range_coupling_m=coupling)
             for dimension in ('length', 'width'):
                 note[dimension + '_error_m'] = target[dimension] - truth[dimension]
                 note['estimated_' + dimension + '_m'] = target[dimension]
             target['log'].update(note)
+
+    def range_change(self, ego, target, before, factor):
+        """Move the range for keep=near_end and range_coupling; return (shift_m, coupling_m)."""
+        settings = self.settings
+        shift = coupling = 0.0
+        dimension = settings['range_coupling']
+        if dimension != 'none':
+            coupling = (factor[dimension] - 1.0) * target['true_range']
+        if settings['keep'] == 'near_end' and target['length'] != before['length']:
+            # As box.py: line of sight from the ego centre, along the target heading.
+            truth = target['true']
+            sight_x, sight_y = truth['x'] - ego['x'], truth['y'] - ego['y']
+            distance = math.hypot(sight_x, sight_y)
+            if distance > 1e-12:
+                along = (math.cos(truth['heading']) * sight_x + math.sin(truth['heading']) * sight_y) / distance
+                shift = (target['length'] - before['length']) / 2.0 * abs(along)
+        if shift or coupling:
+            target['range'] = target['range'] + coupling + shift
+        return shift, coupling
 
     def describe(self):
         return {
@@ -178,7 +216,10 @@ class Error:
             'features': '[1, log1p(r/reference_distance_m), (sin(beta)/sin(reference_bearing_deg))^2, interaction]',
             'distribution': 'log(output/input) = clip(mu + sigma*z, -max_abs_log_error, max_abs_log_error)',
             'noise': 'stationary Gaussian OU per target, plugin label and seed; optional length/width correlation',
-            'scope': 'perceived length/width only; outside-domain targets pass through without changing visibility',
+            'scope': 'perceived length/width; range only through keep=near_end and range_coupling; '
+                     'outside-domain targets pass through without changing visibility',
+            'range': 'keep=near_end: += half the length change along the line of sight; range_coupling: '
+                     '+= (output/input - 1) * true range of that dimension; the two add',
             'symmetry': 'equal surfaces for positive and negative azimuth',
             **copy.deepcopy(self.settings),
         }

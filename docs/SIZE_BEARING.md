@@ -6,7 +6,8 @@ this plugin needs no engine rebuild. The bridge restores true dimensions immedia
 after the controller step. Height is not currently an output of that interface.
 
 The existing `size` plugin retains its meaning: a size assumption represented as
-range scale/bias. `size_bearing` supplies dimension errors directly.
+range scale/bias. `size_bearing` supplies dimension errors directly and, when
+`keep` or `range_coupling` asks for it, passes them on to the range (below).
 
 ## Model
 
@@ -50,6 +51,40 @@ Each plugin label and target ID has independent seeded streams. Optional
 `length_width_correlation` correlates length/width innovations and stationary states.
 `correlation_time_s=0` gives independent samples every simulation step. This is a
 simulation-step process; it does not implement a separate camera frame rate or delay.
+
+## How a dimension error reaches the range
+
+The bridge range is centre to centre, and the controller brakes on the gap to the
+near end of the box. With the defaults, only length and width change, so which point
+of the box stays right and whether the range itself is wrong are assumptions that
+decide whether the error matters at all (`size_geometry` in EXPERIMENTS.md: with the
+near end right, a length error changed nothing). Two settings make them explicit:
+
+| Setting | Values | Range given to the controller |
+|---|---|---|
+| `keep` | `centre` (default) | unchanged: the centre stays, each end moves by half the length change, so the gap is wrong by that half |
+| | `near_end` | += (output length − input length) / 2 × \|cos(target heading − line of sight)\|: the end facing the ego stays |
+| `range_coupling` | `none` (default) | unchanged |
+| | `width` or `length` | += (output/input − 1) × true range of that dimension: a camera that ranges from an assumed object size, as in `size` |
+
+The two changes add, use the same line of sight from the ego centre as `box`, and are
+logged as `range_shift_m` and `range_coupling_m`. Skipped frames (outside the domain,
+wrong class) keep their range. The coupling factor is the dimension's own random draw,
+so the range error inherits its distance/azimuth dependence, OU correlation and
+clipping. Coupling `length` with `keep: near_end` adds both effects of one draw.
+
+With sigma 0 the plugin equals the existing plugins exactly; the tests require
+identical bridge replies (and, where esmini is built, identical `ego.csv` and
+`metrics.csv`) for
+
+| `size_bearing` | equals |
+|---|---|
+| `length_mu`/`width_mu` constant ln(s) | `box` with `length_scale`/`width_scale` s, same `keep` |
+| `width_mu` constant ln(s), `range_coupling: width` | `size` scale s, then `box` `width_scale` s |
+| `length_mu` constant ln(s), `range_coupling: length`, `keep: near_end` | `size` scale s, then `box` `length_scale` s, `keep: near_end` |
+
+So results with sigma 0 can be read against `size_geometry` and `range_factors`, and
+any difference with sigma > 0 comes from the random, distance/azimuth-dependent part.
 
 ## Neutral defaults, domain and limits
 

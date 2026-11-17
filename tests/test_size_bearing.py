@@ -166,6 +166,111 @@ class SizeBearingTests(unittest.TestCase):
         self.assertAlmostEqual(float(row['size_bearing.estimated_width_m']), 2.4)
 
 
+def other_plugin(kind, **overrides):
+    entry = validate({'seed': 7, 'errors': [{'type': kind, **overrides}]})['errors'][0]
+    settings = {k: v for k, v in entry.items() if k != 'type'}
+    context = SimpleNamespace(seed=7, label=kind, steps=300, dt_s=0.01, targets=[{'id': 1, 'name': 'object_2'}])
+    return errors.all_plugins()[kind].Error(settings, context)
+
+
+def turned(distance, bearing_deg, heading):
+    item = target(distance, bearing_deg)
+    item['true']['heading'] = item['heading'] = heading
+    return item
+
+
+GEOMETRIES = [(30.0, 0.0, 0.0), (25.0, 20.0, 0.4), (60.0, -35.0, 2.5), (12.0, 50.0, -1.2)]
+# Bridge message: ego at the origin, target with centre (x, y) and heading h; 4 m x 2 m x 1.5 m boxes.
+def chain_reply(entries, x, y, heading):
+    ego = [0.0, 0.0, 0.0, 0.0, 20.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 2.0, 1.5, 0.0]
+    other = [x, y, 0.0, heading, 5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 2.0, 1.5, math.hypot(x, y)]
+    message = b'\t'.join([b'@@PB', b'S', b'0x0.0p+0', b'2', b'object_1',
+                           *(v.hex().encode() for v in ego), b'object_2',
+                           *(v.hex().encode() for v in other)]) + b'\n'
+    with tempfile.TemporaryDirectory() as folder:
+        chain = errors.Chain(validate({'errors': entries}), scenarios.get('gidas_1549178'), Path(folder) / 'a.tsv')
+        try:
+            return chain.answer(message)
+        finally:
+            chain.close()
+
+
+# Deterministic size_bearing settings and the box/size chain that must give the same controller input.
+EQUIVALENT = [
+    ('centre', {'length_mu': [math.log(0.8), 0, 0, 0], 'width_mu': [math.log(1.2), 0, 0, 0]},
+     [{'type': 'box', 'length_scale': 0.8, 'width_scale': 1.2}]),
+    ('near_end', {'length_mu': [math.log(1.25), 0, 0, 0], 'keep': 'near_end'},
+     [{'type': 'box', 'length_scale': 1.25, 'keep': 'near_end'}]),
+    ('width_coupling', {'width_mu': [math.log(1.1), 0, 0, 0], 'range_coupling': 'width'},
+     [{'type': 'size', 'scale': 1.1}, {'type': 'box', 'width_scale': 1.1}]),
+    ('length_coupling_near_end', {'length_mu': [math.log(0.9), 0, 0, 0], 'range_coupling': 'length', 'keep': 'near_end'},
+     [{'type': 'size', 'scale': 0.9}, {'type': 'box', 'length_scale': 0.9, 'keep': 'near_end'}]),
+]
+
+
+class SizeBearingRangeTests(unittest.TestCase):
+    """keep and range_coupling: defaults leave the range alone; set, they equal box and size exactly."""
+
+    def test_defaults_never_move_the_range(self):
+        model = plugin(length_mu=[0.2, 0, 0, 0], width_mu=[-0.2, 0, 0, 0], length_sigma_ref=0.1)
+        for geometry in GEOMETRIES:
+            item = turned(*geometry)
+            model.perceive(0, 0.0, EGO, [item])
+            self.assertEqual(item['range'], item['true_range'])
+            self.assertEqual((item['log']['range_shift_m'], item['log']['range_coupling_m']), (0.0, 0.0))
+
+    def test_deterministic_settings_equal_box_and_size_plugins(self):
+        for name, settings, chain in EQUIVALENT:
+            ours = plugin(**settings)
+            theirs = [other_plugin(**{'kind': e['type'], **{k: v for k, v in e.items() if k != 'type'}})
+                      for e in chain]
+            for geometry in GEOMETRIES:
+                with self.subTest(name=name, geometry=geometry):
+                    a, b = turned(*geometry), turned(*geometry)
+                    ours.perceive(0, 0.0, EGO, [a])
+                    for model in theirs:
+                        model.perceive(0, 0.0, EGO, [b])
+                    for key in ('range', 'length', 'width'):
+                        self.assertEqual(a[key], b[key], key)
+
+    def test_bridge_replies_are_byte_identical_to_box_and_size(self):
+        for name, settings, chain in EQUIVALENT:
+            for distance, bearing_deg, heading in GEOMETRIES:
+                beta = math.radians(bearing_deg)
+                place = (distance * math.cos(beta), distance * math.sin(beta), heading)
+                with self.subTest(name=name, geometry=(distance, bearing_deg, heading)):
+                    self.assertEqual(chain_reply([{'type': 'size_bearing', **settings}], *place),
+                                     chain_reply(chain, *place))
+
+    def test_near_end_shift_follows_the_line_of_sight(self):
+        model = plugin(length_mu=[math.log(1.5), 0, 0, 0], keep='near_end')
+        ahead, side_on = turned(30.0, 0.0, 0.0), turned(30.0, 0.0, math.pi / 2)
+        model.perceive(0, 0.0, EGO, [ahead, side_on])
+        self.assertAlmostEqual(ahead['log']['range_shift_m'], 1.0)   # (6 - 4) / 2, target straight ahead
+        self.assertAlmostEqual(side_on['log']['range_shift_m'], 0.0)  # seen from the side: its length is across the sight line
+        self.assertAlmostEqual(ahead['range'], 31.0)
+
+    def test_coupling_follows_the_random_dimension_factor(self):
+        model = plugin(width_sigma_ref=0.1, correlation_time_s=0.0, range_coupling='width')
+        for step in range(50):
+            item = target(40.0)
+            model.perceive(step, 0.0, EGO, [item])
+            self.assertAlmostEqual(item['range'], 40.0 * item['width'] / 2.0, places=10)
+            self.assertAlmostEqual(item['log']['range_coupling_m'], item['range'] - 40.0, places=10)
+
+    def test_skipped_targets_keep_their_range(self):
+        model = plugin(width_mu=[0.1, 0, 0, 0], range_coupling='width')
+        far, wrong = target(200.0), target(30.0)
+        wrong['class_correct'] = False
+        model.perceive(0, 0.0, EGO, [far, wrong])
+        self.assertEqual((far['range'], wrong['range']), (200.0, 30.0))
+
+    def test_unknown_choices_are_rejected(self):
+        for settings in (dict(keep='rear'), dict(range_coupling='height')):
+            with self.subTest(settings=settings), self.assertRaises(ValueError):
+                plugin(**settings)
+
+
 @unittest.skipUnless(ESMINI.is_file(), 'esmini is not built')
 class SizeBearingEngineTests(unittest.TestCase):
     @classmethod
@@ -176,9 +281,18 @@ class SizeBearingEngineTests(unittest.TestCase):
         for name, entries in (
                 ('baseline', []),
                 ('neutral', [{'type': 'size_bearing'}]),
-                ('larger', [{'type': 'size_bearing', 'length_mu': [math.log(2.0), 0, 0, 0]}])):
+                ('larger', [{'type': 'size_bearing', 'length_mu': [math.log(2.0), 0, 0, 0]}]),
+                *((f'ours_{name}', [{'type': 'size_bearing', **settings}]) for name, settings, _ in EQUIVALENT),
+                *((f'theirs_{name}', chain) for name, _, chain in EQUIVALENT)):
             config = validate({'controller': 'example_aeb', 'seed': 7, 'errors': entries})
             cls.results[name] = run(config, cls.folder / name, plots=False)
+
+    def test_deterministic_settings_drive_the_controller_like_box_and_size(self):
+        for name, _, _ in EQUIVALENT:
+            with self.subTest(name=name):
+                for file in ('ego.csv', 'metrics.csv'):
+                    self.assertEqual((self.folder / f'ours_{name}' / file).read_bytes(),
+                                     (self.folder / f'theirs_{name}' / file).read_bytes(), file)
 
     @classmethod
     def tearDownClass(cls):
