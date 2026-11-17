@@ -1,0 +1,15 @@
+{
+  "name": "fitted_profiles",
+  "description": "With the distance error and misses of two real detectors, fitted from K-Radar boxes (fit-kradar, fitted plugin), does HiDrive still avoid the TASC car-car crashes it avoids without error, and is it the distance error or the missed frames that causes any crash? Parameters per range band (condition range), lost target predicted with the object speed held (as in the deck since 2026-11-03), seeds 1-10 as in tasc_tolerance. The parameter file is not in Git; each run records its sha256. 5978 runs.",
+  "scenarios": ["tasc_car_*"],
+  "base": {"errors": [{"type": "fitted", "condition": "range", "lost_target": "predict", "lost_target_motion": "frozen",
+                       "lost_target_distance": "frozen_object"}]},
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "both", "vary": {"errors.fitted.profile": ["asf", "pvrcnn"]}, "seeds": {"first": 1, "count": 10}},
+    {"name": "range_only", "set": {"errors.fitted.misses": false}, "vary": {"errors.fitted.profile": ["asf", "pvrcnn"]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "misses_only", "set": {"errors.fitted.range_error": false},
+     "vary": {"errors.fitted.profile": ["asf", "pvrcnn"]}, "seeds": {"first": 1, "count": 10}}
+  ]
+}
