@@ -66,6 +66,29 @@ class ChainRun:
         return rows
 
 
+class SeedScopeTests(unittest.TestCase):
+    def test_each_scenario_gets_its_own_seed_unless_shared(self):
+        def seeds(**extra):
+            return [errors.plugin_seed(validate({'scenario': name, 'seed': 3, **extra}))
+                    for name in ('gidas_1549178', 'gidas_1554254', 'gidas_1549178')]
+        first, second, again = seeds()
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, again)
+        self.assertTrue(0 <= first <= 2147483647)
+        self.assertEqual(seeds(seed_scope='shared'), [3, 3, 3])
+        with self.assertRaises(ValueError):
+            validate({'seed_scope': 'case'})
+
+    def test_the_chain_draws_from_the_plugin_seed(self):
+        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
+        for scope in ('scenario', 'shared'):
+            c = validate({'scenario': 'gidas_1549178', 'errors': [entry], 'seed': 1, 'seed_scope': scope})
+            chain = errors.Chain(c, scenarios.get('gidas_1549178'), Path(tempfile.gettempdir()) / f'seed_scope_{scope}.tsv')
+            plugin = chain.plugins[0][1]
+            chain.close()
+            self.assertEqual(plugin.missed['object_2'], missed_steps(c['errors'][0], errors.plugin_seed(c), 1, DT, chain.steps))
+
+
 class ZhuoMaPortTests(unittest.TestCase):
     """Counts from sensitivity_runs.csv of reports/aeb_markov_20261006 (commit 484675b): 200 frames, p=0.1."""
 
@@ -172,7 +195,7 @@ class ChainTests(unittest.TestCase):
 
     def test_ou_adds_the_scaled_sample(self):
         run = ChainRun([{'type': 'ou', 'mae_pct': 5.0}], seed=4)
-        z = unit_samples(4, 0.5, TARGET['id'], DT, 20)
+        z = unit_samples(errors.plugin_seed(config([], 4)), 0.5, TARGET['id'], DT, 20)
         sigma = 100.0 * 5.0 / 100.0 * (30.0 - 3.0) / (100.0 - 3.0) * SIGMA_PER_MAE
         for step in (0, 7, 19):
             self.assertEqual(run.step(step)[1]['range'], 30.0 + sigma * z[step])
@@ -181,7 +204,7 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(float(rows[1]['raw_range_m']), 30.0 + sigma * z[7])
 
     def test_ou_bias_follows_the_same_distance_law(self):
-        z = unit_samples(4, 0.5, TARGET['id'], DT, 20)
+        z = unit_samples(errors.plugin_seed(config([], 4)), 0.5, TARGET['id'], DT, 20)
         share = (30.0 - 3.0) / (100.0 - 3.0)
         bias_only = ChainRun([{'type': 'ou', 'mae_pct': 0.0, 'bias_pct': 5.0}], seed=4)
         both = ChainRun([{'type': 'ou', 'mae_pct': 5.0, 'bias_pct': -2.0}], seed=4)
@@ -212,7 +235,7 @@ class ChainTests(unittest.TestCase):
     def test_identification_replaces_size_on_wrong_frames(self):
         entries = [{'type': 'identification', 'wrong_rate': 0.5, 'wrong_scale': 2.0, 'wrong_mean_s': 0.2},
                    {'type': 'size', 'bias_m': 1.0}]
-        run, wrong = ChainRun(entries, seed=2), wrong_class_steps(config(entries, 2)['errors'][0], 2, 1, DT, 300)
+        run, wrong = ChainRun(entries, seed=2), wrong_class_steps(config(entries, 2)['errors'][0], errors.plugin_seed(config(entries, 2)), 1, DT, 300)
         for step in range(300):
             self.assertEqual(run.step(step)[1]['range'], 60.0 if wrong[step] else 31.0)
         rows = run.log()
@@ -221,7 +244,7 @@ class ChainTests(unittest.TestCase):
 
     def test_detection_hides_the_target_on_missed_steps(self):
         entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], 1, 1, DT, 300)
+        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 300)
         flags = [run.step(step)[0] for step in range(300)]
         self.assertEqual([not flag & errors.SEEN for flag in flags], missed)
         self.assertTrue(any(missed))
@@ -230,7 +253,7 @@ class ChainTests(unittest.TestCase):
     def test_prediction_moves_the_last_range_on(self):
         entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'lost_target': 'predict',
                  'lost_target_motion': 'frozen'}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], 1, 1, DT, 1000)
+        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 1000)
         first = missed.index(True, missed.index(False))
         self.assertLess(first, 150)
         for step in range(first):

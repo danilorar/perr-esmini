@@ -43,7 +43,8 @@ ego. Each target is a dictionary:
 
 Optional: `CHOICES` for text settings, `check(settings, run)` to reject bad combinations with `ValueError`, and
 `describe()` to save a description in `summary.json`. Use a random stream per plugin and target, seeded as above: the
-same seed then gives the same errors, and adding another plugin or target does not change them. A plugin cannot add
+same seed then gives the same errors, and adding another plugin or target does not change them. `run.seed` already
+differs per scenario (see `plugin_seed` in `pipeline/errors/__init__.py`), so do not mix the scenario in again. A plugin cannot add
 objects that are not in the scenario.
 
 ## Add a controller

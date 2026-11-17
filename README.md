@@ -194,6 +194,9 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
   tables stay outside Git (K-Radar licence).
 - The course does not allow a Kalman filter, so controllers get the observations directly.
 - The same seed gives the same result on the same machine. Windows and macOS may differ slightly.
+- Each scenario draws its own error samples from the seed (`"seed_scope": "scenario"`, the default), so seed 1
+  is a different miss pattern in every TASC case. Runs before 2026-11-17 drew the same samples in every scenario;
+  add `"seed_scope": "shared"` to a configuration or a grid's `base` to repeat them.
 - macOS was tested on a cloud Mac with no display, so `replay` has not been tried there yet.
 - If a Windows build fails on long paths, set `TME180_RUNTIME` to a short folder, such as `C:\t`, and run `setup` again.
 - AI agents must not read the HiDrive sources: see `pipeline/controllers/hidrive/AGENTS.md`.

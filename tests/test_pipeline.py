@@ -14,7 +14,7 @@ from unittest import mock
 import urllib.error
 import xml.etree.ElementTree as ET
 
-from pipeline import controllers, grid, results, scenarios
+from pipeline import controllers, errors, grid, results, scenarios
 from pipeline.common import ESMINI, code_version, read_json, write_json
 from pipeline.config import validate
 from pipeline.engine import build
@@ -376,7 +376,7 @@ class FullRunTests(unittest.TestCase):
             run(config, Path(folder) / 'run', plots=False)
             rows = self.table(Path(folder) / 'run/observations.csv')
             applied = self.table(Path(folder) / 'run/perception_applied.tsv', delimiter='\t')
-        samples = unit_samples(1, 0.5, 1, config['dt_s'], len(applied))
+        samples = unit_samples(errors.plugin_seed(config), 0.5, 1, config['dt_s'], len(applied))
         for row in applied:
             self.assertEqual(float(row['ou.z']), samples[round(float(row['time_s']) / config['dt_s'])])
             self.assertAlmostEqual(float(row['raw_range_m']), float(row['true_range_m']) + float(row['ou.error_m']), places=9)

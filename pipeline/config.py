@@ -8,6 +8,9 @@ DEFAULT = {
     'controller': 'hidrive',
     'errors': [],                       # error plugins in the order they run; see errors/__init__.py
     'seed': 42,
+    # 'scenario': each scenario draws its own error samples from the seed; 'shared': every scenario draws the same
+    # samples, as all runs before 2026-11-17 did (set it to repeat those runs).
+    'seed_scope': 'scenario',
     'dt_s': 0.01,
 }
 # Settings of the first version. They now live in error plugins.
@@ -34,6 +37,8 @@ def validate(raw):
         raise ValueError('dt_s: must be 0.01, 0.02 or 0.05')
     if isinstance(c['seed'], bool) or not isinstance(c['seed'], int) or not 0 <= c['seed'] <= 2147483647:
         raise ValueError('seed: must be an integer from 0 to 2147483647')
+    if c['seed_scope'] not in ('scenario', 'shared'):
+        raise ValueError('seed_scope: must be "scenario" or "shared"')
     c['errors'] = errors.validate(c['errors'], c)
     c['duration_s'] = scenario.duration(c['dt_s'])
     return c

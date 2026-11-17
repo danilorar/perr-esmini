@@ -17,7 +17,8 @@ To write a plugin, copy template.py. A plugin module has:
         def perceive(self, step, t, ego, targets)   before every controller step; change targets in place
         def describe(self)                          optional: saved in summary.json
 
-run has seed, dt_s, steps, duration_s, scenario, ego (name), targets ([{'id', 'name'}]) and label.
+run has seed, dt_s, steps, duration_s, scenario, ego (name), targets ([{'id', 'name'}]) and label. run.seed is
+plugin_seed(c): it differs per scenario, so the same configured seed gives each scenario its own error samples.
 A target is a dict:
     read only   id, name, true_range, true (x, y, z, heading, speed, vx, vy, vz, ax, ay, az, length, width, height)
     change      range        centre-to-centre distance; the target moves along the line of sight
@@ -30,6 +31,7 @@ ego has id, name and the same fields as true; it is read only. A negative range 
 The controller sees the result for one step; esmini puts the true state back right after it.
 """
 import csv
+import hashlib
 import importlib
 import math
 from pathlib import Path
@@ -55,6 +57,15 @@ def all_plugins():
             if hasattr(module, 'Error') and hasattr(module, 'SETTINGS'):
                 found[info.name] = module
     return dict(sorted(found.items()))
+
+
+def plugin_seed(c):
+    """The seed the plugins draw from: the configured seed mixed with the scenario name, or the configured seed itself
+    with seed_scope "shared" (every scenario then gets the same samples, as before 2026-11-17)."""
+    if c['seed_scope'] == 'shared':
+        return c['seed']
+    digest = hashlib.sha256(f'{c["seed"]}:{c["scenario"]}'.encode('utf-8')).digest()
+    return int.from_bytes(digest[:4], 'big') >> 1  # 0 to 2147483647, the range of a configured seed
 
 
 def label(entry):
@@ -104,7 +115,7 @@ def validate(entries, c):
                     for key, default in module.SETTINGS.items()}
         if hasattr(module, 'check'):
             try:
-                module.check(settings, SimpleNamespace(seed=c['seed'], dt_s=c['dt_s']))
+                module.check(settings, SimpleNamespace(seed=plugin_seed(c), dt_s=c['dt_s']))
             except ValueError as error:
                 raise ValueError(f'{where}: {error}') from None
         checked.append({'type': entry['type'], **({'name': entry['name']} if 'name' in entry else {}), **settings})
@@ -122,7 +133,7 @@ class Chain:
         self.plugins, self.columns = [], []
         for entry in c['errors']:
             module = plugins[entry['type']]
-            run = SimpleNamespace(seed=c['seed'], dt_s=c['dt_s'], steps=self.steps, duration_s=c['duration_s'],
+            run = SimpleNamespace(seed=plugin_seed(c), dt_s=c['dt_s'], steps=self.steps, duration_s=c['duration_s'],
                                   scenario=c['scenario'], ego=scenario.ego, targets=scenario.targets, label=label(entry))
             settings = {key: value for key, value in entry.items() if key not in ('type', 'name')}
             self.plugins.append((label(entry), module.Error(settings, run)))
