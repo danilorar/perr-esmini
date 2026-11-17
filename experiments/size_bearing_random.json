@@ -1,0 +1,20 @@
+{
+  "name": "size_bearing_random",
+  "description": "A random, time-correlated (tau 0.5 s) width error passed to the range (range_coupling: width), with log-ratio standard deviation 5, 10 or 20% at 50 m. flat: the same spread at every distance; growing: spread proportional to 1 + r/50, so half at 0 m, equal at 50 m, double at 150 m. Both laws use the same random draws per case and seed, so they compare run by run. Does the crash rate follow the spread as for OU range error (tasc_tolerance, seeds 1-10), and does it matter where in distance the error is large? Sensitivity levels, not sensor values. 5978 runs.",
+  "scenarios": ["tasc_car_*"],
+  "groups": [
+    {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
+    {"name": "flat_0.05", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.05, "width_sigma_log": [0, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "flat_0.10", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.1, "width_sigma_log": [0, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "flat_0.20", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.2, "width_sigma_log": [0, 0, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "growing_0.05", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.025, "width_sigma_log": [0, 1, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "growing_0.10", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.05, "width_sigma_log": [0, 1, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}},
+    {"name": "growing_0.20", "set": {"errors": [{"type": "size_bearing", "width_sigma_ref": 0.1, "width_sigma_log": [0, 1, 0, 0], "range_coupling": "width", "parameter_source": "assumed sensitivity levels, not sensor values"}]},
+     "seeds": {"first": 1, "count": 10}}
+  ]
+}
