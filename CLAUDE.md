@@ -4,7 +4,7 @@ Hard rules for every AI agent (HiDrive files, no Kalman filter, wording of resul
 @AGENTS.md
 
 ## Project
-Closed-loop sensitivity study: Python plugins add assumed range errors to what an AEB controller sees
+Closed-loop sensitivity study: Python plugins add assumed or K-Radar-fitted range errors to what an AEB controller sees
 in esmini rear-end scenarios; we measure how collisions, impact speed and TTC change.
 Shared branch: `main`. Each person works on their own branch and merges into `main` through a pull request.
 Teammates use Windows and macOS; this machine is Linux.

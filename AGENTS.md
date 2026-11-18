@@ -5,7 +5,10 @@
   `pipeline/controllers/hidrive/AGENTS.md`. Do not search `runtime/esmini-3.8.1/`, which holds copies; read public esmini
   code from the source archive in `runtime/downloads/`.
 - The course does not allow a Kalman filter. Controllers get the observations directly.
-- Error values are assumed. Describe results as sensitivity results, not as measured sensor risk.
+- Error values are assumed, except in the `fitted` plugin (fitted from K-Radar, `docs/KRADAR.md`). Describe results
+  with assumed values as sensitivity results, not as measured sensor risk.
+- Never add the teacher's K-Radar tables or TASC cases to Git: the repository is public, K-Radar's licence forbids it
+  and the TASC cases are the teacher's data.
 - The scenarios are TASC data, even where a file or an ID says GIDAS.
 - Check changes with `python -m unittest discover tests`. A change to `pipeline/run.py`, `results.py` or `errors/` must keep
   results identical unless the change is meant to alter them.

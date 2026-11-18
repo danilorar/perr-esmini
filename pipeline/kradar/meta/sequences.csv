@@ -1,0 +1,59 @@
+sequence,road_type,time,weather,frames
+1,urban,night,normal,597
+2,highway,night,normal,462
+3,highway,night,normal,597
+4,highway,night,normal,588
+5,urban,day,normal,597
+6,urban,night,normal,594
+7,alleyway,night,normal,595
+8,university,night,normal,567
+9,highway,day,normal,833
+10,highway,day,normal,1130
+11,highway,day,normal,1195
+12,highway,day,normal,888
+13,highway,day,overcast,227
+14,urban,day,normal,595
+15,urban,day,normal,591
+16,university,day,normal,578
+17,university,day,normal,593
+18,urban,day,normal,594
+19,alleyway,day,normal,592
+20,urban,day,normal,595
+21,alleyway,night,rain,597
+22,urban,night,overcast,598
+23,urban,night,rain,598
+24,urban,night,rain,598
+25,urban,night,rain,597
+26,suburban,day,rain,597
+27,suburban,day,sleet,598
+28,mountain,day,sleet,597
+29,mountain,day,sleet,597
+30,parking lot,day,sleet,470
+31,suburban,day,sleet,598
+32,suburban,day,rain,597
+33,suburban,day,rain,598
+34,suburban,night,rain,598
+35,parking lot,night,sleet,597
+36,parking lot,night,sleet,597
+37,suburban,night,sleet,597
+38,mountain,day,fog,597
+39,mountain,day,fog,597
+40,mountain,day,fog,598
+41,mountain,day,fog,597
+42,urban,day,light snow,598
+43,urban,day,light snow,598
+44,shoulder,day,fog,597
+45,shoulder,day,fog,592
+46,highway,night,heavy snow,598
+47,highway,night,heavy snow,266
+48,highway,night,light snow,443
+49,highway,night,light snow,598
+50,highway,night,sleet,597
+51,highway,night,sleet,597
+52,highway,night,sleet,598
+53,highway,day,sleet,597
+54,urban,day,heavy snow,601
+55,urban,day,heavy snow,494
+56,urban,day,heavy snow,598
+57,urban,day,heavy snow,598
+58,urban,day,heavy snow,598
