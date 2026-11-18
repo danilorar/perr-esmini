@@ -130,8 +130,9 @@ so this file is the shared record of what was run and what it showed.
   `output/grids/tasc_tolerance_shared_seeds/`.
 
 ### `fitted_profiles`
-- Error model and parameters: `pipeline/errors/fitted.py` with `output/kradar/fit/parameters.json` (sha256 starting
-  `549dba29f9a7`, from `python -m pipeline fit-kradar` at `9ecc56b`; the file and the K-Radar tables are not in Git).
+- Error model and parameters: `pipeline/errors/fitted.py` with the parameter file from `python -m pipeline fit-kradar`
+  at `9ecc56b` (sha256 starting `549dba29f9a7`), then in `output/kradar/fit/`; the same file is in Git as
+  `pipeline/kradar/parameters.json` since `82c4eb0`. The K-Radar tables are not in Git.
   Rows per range band (`condition` `range`), lead predicted with the object speed held while missed, as in `lost_target`.
   Values are fitted from a paired log of one research car, not assumed; ASF and PV-RCNN are the two detectors fitted.
 - Generator check: the plugin alone, 3000 seeds of 10 s per band with no esmini (`gen_check.py`), gives the fitted
