@@ -54,9 +54,11 @@ def command_import_tasc(args):
 
 
 def command_fit_kradar(args):
-    from .fit_kradar import run
-    summary = run(args.data, args.meta, args.detectors, args.output or OUTPUT / 'kradar' / 'fit')
+    from .fit_kradar import compare_with_shared, run
+    summary = run(args.data, args.meta, args.detectors, args.output or OUTPUT / 'kradar' / 'fit',
+                  check=not args.other_data)
     print(f'Parameters and checks in {summary.parent}; read {summary.name} first.')
+    print(compare_with_shared(summary.parent / 'parameters.json'))
 
 
 def command_replay(args):
@@ -102,9 +104,11 @@ def main():
 
     fit = commands.add_parser('fit-kradar', help='fit error parameters from K-Radar reference and detector boxes')
     fit.add_argument('data', help='folder with reference/kradar_P3.parquet and candidates/kradar_<detector>.parquet')
-    fit.add_argument('--meta', required=True, help='folder with K-Radar train.txt, test.txt and sequences.csv')
+    fit.add_argument('--meta', help='folder with K-Radar train.txt, test.txt and sequences.csv; default pipeline/kradar/meta')
     fit.add_argument('--detectors', nargs='+', default=['asf', 'pvrcnn'])
     fit.add_argument('--output', help='results folder; default output/kradar/fit')
+    fit.add_argument('--other-data', action='store_true',
+                     help='fit tables that differ from the sha256 sums in pipeline/kradar/tables.sha256')
     fit.set_defaults(function=command_fit_kradar)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')

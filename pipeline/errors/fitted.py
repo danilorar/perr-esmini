@@ -1,7 +1,7 @@
 """Fitted: range error and missed frames with parameters fitted from a paired log, not assumed.
 
-Reads the file written by `python -m pipeline fit-kradar` (parameters, default output/kradar/fit/parameters.json, not
-in Git) and uses one profile in it (profile: a detector of that file, such as "asf" or "pvrcnn"). Per sensor frame of
+Reads a file as `python -m pipeline fit-kradar` writes it (parameters; default pipeline/kradar/parameters.json, the
+shared fit of ASF and PV-RCNN++, in Git) and uses one profile in it (profile: a detector of that file, such as "asf" or "pvrcnn"). Per sensor frame of
 the log (frame_period_s there, 0.1 s) and per target:
 
     range += b + sigma_ou * z + sigma_white * w
@@ -31,7 +31,7 @@ import random
 from . import detection
 
 ROOT = Path(__file__).resolve().parents[2]
-SETTINGS = {'parameters': 'output/kradar/fit/parameters.json', 'profile': '', 'condition': 'all',
+SETTINGS = {'parameters': 'pipeline/kradar/parameters.json', 'profile': '', 'condition': 'all',
             'range_error': True, 'misses': True, 'lost_target': 'vanish', 'lost_target_motion': 'live',
             'lost_target_distance': 'frozen_difference'}
 LOST = ('lost_target', 'lost_target_motion', 'lost_target_distance')

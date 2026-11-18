@@ -1,11 +1,16 @@
 """Fit error-model parameters from K-Radar: reference boxes against detector boxes, on test frames only.
 
-    python -m pipeline fit-kradar <data folder> --meta <folder> [--detectors asf pvrcnn] [--output <folder>]
+    python -m pipeline fit-kradar <data folder> [--meta <folder>] [--detectors asf pvrcnn] [--output <folder>]
+                                  [--other-data]
 
-<data folder>: reference/kradar_P3.parquet and candidates/kradar_<detector>.parquet (the teacher's tables, not in Git).
-<meta folder>: K-Radar's split lists train.txt and test.txt (github.com/kaist-avelab/K-Radar, resources/split) and
-sequences.csv (sequence, road_type, time, weather, frames), Table 5 of the K-Radar paper (arXiv 2206.08171).
-Needs pandas and pyarrow on top of pipeline/requirements.txt.
+<data folder>: reference/kradar_P3.parquet and candidates/kradar_<detector>.parquet (the teacher's tables, not in Git:
+K-Radar licence). Each table must match its sha256 in pipeline/kradar/tables.sha256, so everyone fits the same data;
+--other-data skips that check.
+<meta folder>: default pipeline/kradar/meta. K-Radar's split lists train.txt and test.txt (github.com/kaist-avelab/K-Radar,
+resources/split) and sequences.csv (sequence, road_type, time, weather, frames), Table 5 of the K-Radar paper
+(arXiv 2206.08171).
+Needs pandas and pyarrow on top of pipeline/requirements.txt. At the end the new parameters.json is compared with
+pipeline/kradar/parameters.json, the shared fit that the fitted plugin reads by default.
 
 Every detector box is paired with at most one reference box of the same frame: nearest centres first, at most GATE_M
 apart. The lead is the nearest reference vehicle ahead in the ego lane (|y| < LANE_M); its rows count when it is a
@@ -37,6 +42,7 @@ import subprocess
 
 import numpy as np
 
+KRADAR = Path(__file__).resolve().parent / 'kradar'
 DT_S = 0.1
 AREA_X_M = (0.0, 72.0)
 AREA_Y_M = 16.0
@@ -329,6 +335,67 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def read_sums(path):
+    """{relative path: sha256} from a file in sha256sum format."""
+    sums = {}
+    for line in Path(path).read_text(encoding='utf-8').splitlines():
+        if line.strip():
+            digest, name = line.split(maxsplit=1)
+            sums[name.strip().lstrip('*')] = digest
+    return sums
+
+
+def table_sums(data, names, sums_file=None):
+    """sha256 of each table (paths relative to data). With sums_file, every table must match the sum listed there."""
+    expected = read_sums(sums_file) if sums_file else {}
+    sums, differ = {}, []
+    for name in names:
+        path = Path(data) / name
+        if not path.is_file():
+            raise ValueError(f'{path} not found')
+        sums[name] = sha256(path)
+        if sums_file and sums[name] != expected.get(name):
+            differ.append(name)
+    if differ:
+        raise ValueError(f'{", ".join(differ)} differ from {Path(sums_file).name}, so the fit would not match the shared '
+                         'parameters; add --other-data to fit them anyway')
+    return sums
+
+
+def largest_difference(a, b):
+    """Largest absolute difference between the numbers of two parameter files; None when anything else differs."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        parts = [largest_difference(a[key], b[key]) for key in a] if a.keys() == b.keys() else [None]
+    elif isinstance(a, list) and isinstance(b, list):
+        parts = [largest_difference(x, y) for x, y in zip(a, b)] if len(a) == len(b) else [None]
+    elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (a, b)):
+        if a != a or b != b:                      # NaN
+            return 0.0 if a != a and b != b else math.inf
+        return abs(a - b)
+    else:
+        return 0.0 if a == b else None
+    return None if None in parts else max(parts, default=0.0)
+
+
+def compare_with_shared(path, shared=KRADAR / 'parameters.json'):
+    """One line per detector: is the new fit the same as the shared file?"""
+    name = f'pipeline/kradar/{Path(shared).name}'
+    new = json.loads(Path(path).read_text(encoding='utf-8'))
+    old = json.loads(Path(shared).read_text(encoding='utf-8')) if Path(shared).is_file() else {}
+    lines = []
+    for detector, profile in new.items():
+        if detector not in old:
+            lines.append(f'{detector}: not in {name}')
+            continue
+        difference = largest_difference(profile, old[detector])
+        if difference is not None and difference < 1e-9:
+            lines.append(f'{detector}: same as {name} (largest difference {difference:.1g})')
+        else:
+            size = 'layout' if difference is None else f'largest difference {difference:.3g}'
+            lines.append(f'{detector}: differs from {name} ({size})')
+    return '\n'.join(lines)
+
+
 def git_state():
     root = Path(__file__).resolve().parents[1]
     try:
@@ -341,15 +408,17 @@ def git_state():
         return 'unknown', []
 
 
-def run(data, meta, detectors, output):
+def run(data, meta, detectors, output, check=True):
+    meta = Path(meta) if meta else KRADAR / 'meta'
+    names = ['reference/kradar_P3.parquet', *(f'candidates/kradar_{d}.parquet' for d in detectors)]
+    sums = table_sums(data, names, KRADAR / 'tables.sha256' if check else None)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     commit, changed = git_state()
-    files = [Path(data) / 'reference' / 'kradar_P3.parquet']
-    files += [Path(data) / 'candidates' / f'kradar_{d}.parquet' for d in detectors]
     lines = ['# K-Radar fit', '',
              f'Code: commit {commit}' + (f', changed: {", ".join(changed)}' if changed else ', no local changes'),
-             'Data (sha256): ' + ', '.join(f'{f.name} {sha256(f)[:12]}' for f in files),
+             'Data (sha256): ' + ', '.join(f'{Path(n).name} {s[:12]}' for n, s in sums.items())
+             + ('' if check else ' (not checked against pipeline/kradar/tables.sha256)'),
              'Test frames only. Lead = nearest reference vehicle ahead with |y| < 2 m; rows kept when it is a Sedan.',
              'targets_over_1m_far: share of lead tracks with 20+ paired frames whose mean error is above +1 m.', '']
     parameters = {}

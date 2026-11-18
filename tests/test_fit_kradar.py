@@ -1,4 +1,5 @@
-"""fit-kradar: pairing, split mapping and whether the fit finds known parameters in made-up data."""
+"""fit-kradar: pairing, split mapping, the data check and whether the fit finds known parameters in made-up data."""
+import hashlib
 import math
 from pathlib import Path
 import tempfile
@@ -12,6 +13,44 @@ except ImportError:          # fit-kradar needs pandas; the rest of the pipeline
     pd = None
 
 from pipeline import fit_kradar
+from pipeline.errors import fitted
+
+
+class SharedKradarFilesTest(unittest.TestCase):
+    """The files in pipeline/kradar that let everyone fit the same data and use the same fit without it."""
+
+    def test_table_sums_accept_the_listed_version_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            (data / 'reference').mkdir()
+            (data / 'reference' / 'a.parquet').write_bytes(b'table')
+            right = data / 'right.sha256'
+            right.write_text(f'{hashlib.sha256(b"table").hexdigest()}  reference/a.parquet\n')
+            wrong = data / 'wrong.sha256'
+            wrong.write_text(f'{"0" * 64}  reference/a.parquet\n')
+            names = ['reference/a.parquet']
+            self.assertEqual(fit_kradar.table_sums(data, names, right), fit_kradar.table_sums(data, names))
+            with self.assertRaises(ValueError):
+                fit_kradar.table_sums(data, names, wrong)
+            with self.assertRaises(ValueError):
+                fit_kradar.table_sums(data, ['reference/none.parquet'])
+
+    def test_largest_difference_compares_numbers_and_layout(self):
+        a = {'cells': [{'b_m': 0.1, 't': math.nan, 'name': 'all'}], 'runs': [1, 2]}
+        self.assertEqual(fit_kradar.largest_difference(a, a), 0.0)
+        self.assertAlmostEqual(fit_kradar.largest_difference(a, {**a, 'runs': [1, 2.5]}), 0.5)
+        self.assertIsNone(fit_kradar.largest_difference(a, {**a, 'runs': [1]}))
+        self.assertIsNone(fit_kradar.largest_difference(a, {'cells': a['cells']}))
+
+    def test_shared_fit_and_meta_are_complete(self):
+        self.assertEqual(sorted(fit_kradar.read_sums(fit_kradar.KRADAR / 'tables.sha256')),
+                         ['candidates/kradar_asf.parquet', 'candidates/kradar_l4dr.parquet',
+                          'candidates/kradar_pvrcnn.parquet', 'reference/kradar_P3.parquet'])
+        for name in ('train.txt', 'test.txt', 'sequences.csv'):
+            self.assertTrue((fit_kradar.KRADAR / 'meta' / name).is_file(), name)
+        for profile in ('asf', 'pvrcnn'):
+            fit = fitted.load({**fitted.SETTINGS, 'profile': profile, 'condition': 'range'})
+            self.assertEqual(len(fit['rows']), 3)
 
 
 @unittest.skipIf(pd is None, 'pandas is not installed')
