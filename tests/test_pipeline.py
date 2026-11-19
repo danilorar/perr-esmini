@@ -42,7 +42,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(validate(json.loads(json.dumps(config))), config)
 
     def test_shipped_configurations_are_valid(self):
-        for path in (Path(__file__).parents[1] / 'configs').glob('*.json'):
+        for path in (Path(__file__).parents[1] / 'experiments' / 'runs').glob('*.json'):
             with self.subTest(path=path.name):
                 validate(read_json(path))
 
@@ -241,7 +241,7 @@ class GridTests(unittest.TestCase):
                 grid.expand({'set': {'errors': [{'type': 'size'}]}, 'vary': {key: [1.0]}})
 
     def test_shipped_grids_are_valid(self):
-        for path in (Path(__file__).parents[1] / 'experiments').glob('*.json'):
+        for path in (Path(__file__).parents[1] / 'experiments' / 'grids').glob('*.json'):
             with self.subTest(path=path.name):
                 self.assertGreater(len(grid.expand(read_json(path))), 0)
 

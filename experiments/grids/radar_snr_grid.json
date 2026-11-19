@@ -1,0 +1,28 @@
+{
+    "name": "radar_snr_grid",
+    "description": "SNR-based radar model (fov + radar plugins) across all TASC target types and two environments. Tests whether physically coupled noise and miss probability produce different collision rates for cars vs cyclists vs bicycles, and whether fog meaningfully degrades detection at the short ranges in these scenarios. 6 groups x ~140 scenarios = ~840 runs.",
+    "scenarios": ["tasc_car_*", "tasc_cyclist_*", "tasc_bicycle_*"],
+    "groups": [
+        {
+            "name": "no_error",
+            "set":  {"errors": []},
+            "seeds": [1]
+        },
+        {
+            "name": "radar_clear",
+            "set":  {"errors": [
+                {"type": "fov",   "fov_deg": 60, "max_range_m": 150},
+                {"type": "radar", "environment": "clear"}
+            ]},
+            "seeds": [1]
+        },
+        {
+            "name": "radar_fog",
+            "set":  {"errors": [
+                {"type": "fov",   "fov_deg": 60, "max_range_m": 150},
+                {"type": "radar", "environment": "fog"}
+            ]},
+            "seeds": [1]
+        }
+    ]
+}

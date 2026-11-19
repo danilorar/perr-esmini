@@ -53,7 +53,7 @@ later and it downloads only what is missing.
 ## Run one simulation
 
 ```bash
-python -m pipeline run configs/lost_target.json --output output/my_run
+python -m pipeline run experiments/runs/lost_target.json --output output/my_run
 python -m pipeline replay output/my_run
 python -m pipeline list
 ```
@@ -82,9 +82,9 @@ A configuration lists only what differs from the defaults in `pipeline/config.py
 ## Run a grid
 
 ```bash
-python -m pipeline grid experiments/smoke.json
-python -m pipeline grid experiments/range_factors.json --list
-python -m pipeline grid experiments/range_factors.json --workers 16
+python -m pipeline grid experiments/grids/smoke.json
+python -m pipeline grid experiments/grids/range_factors.json --list
+python -m pipeline grid experiments/grids/range_factors.json --workers 16
 ```
 
 Results go to `output/grids/<name>/`: `results.csv` has one row per run, `summary.csv` one row per scenario and level,
@@ -113,7 +113,7 @@ A key like `errors.detection.miss_rate` changes one setting of the entry with th
 already be in the list, from `base` or `set`. A `set` of `"errors"` replaces the whole list.
 `seeds` is a count (from 0), a range, or a list like `[1, 2]`; without it, seed 0 runs.
 
-Ready-made grids are in `experiments/`. Start with `smoke`, which checks that the pipeline works.
+Ready-made grids are in `experiments/grids/`. Start with `smoke`, which checks that the pipeline works. Single-run example configs are in `experiments/runs/`.
 
 ## Error plugins
 
@@ -186,8 +186,9 @@ pipeline/
   errors/           error plugins
   scenarios/        scenario files
   engine/           esmini build and the perception bridge
-configs/            example configurations
-experiments/        grids
+experiments/
+  runs/             single-run example configs (pipeline run)
+  grids/            grid experiments (pipeline grid)
 tests/              python -m unittest discover tests
 docs/               EXTENDING.md (add plugins, controllers, scenarios), EXPERIMENTS.md (grid log),
                     TASC_SCENARIOS.md (which TASC cases are used), KRADAR.md (K-Radar data, fit and results)

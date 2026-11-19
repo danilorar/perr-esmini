@@ -1,0 +1,8 @@
+{
+    "scenario": "tasc_cyclist_1543798",
+    "seed": 0,
+    "errors": [
+        {"type": "fov",   "fov_deg": 60,  "max_range_m": 150},
+        {"type": "radar", "environment": "fog"}
+    ]
+}

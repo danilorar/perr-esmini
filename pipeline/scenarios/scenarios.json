@@ -1,5 +1,6 @@
 {
   "gidas_1549178": {"title": "TASC 1549178", "file": "C_original_1549178.xosc"},
   "gidas_1554254": {"title": "TASC 1554254", "file": "C_original_1554254.xosc"},
-  "gidas_1554431": {"title": "TASC 1554431", "file": "C_original_1554431.xosc"}
+  "gidas_1554431": {"title": "TASC 1554431", "file": "C_original_1554431.xosc"},
+  "synthetic_ccr_80": {"title": "Synthetic CCR 80 kph — stationary car 125 m", "file": "synthetic_ccr_80.xosc"}
 }

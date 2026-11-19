@@ -1,0 +1,5 @@
+{
+    "scenario": "gidas_1549178",
+    "seed": 0,
+    "errors": [{"type": "fov", "fov_deg": 60, "max_range_m": 150}]
+}

@@ -18,14 +18,15 @@ Teammates use Windows and macOS; this machine is Linux.
 - `source .venv/bin/activate`
 - `python -m unittest discover tests`   (must pass before any commit)
 - `python -m pipeline setup`            (after controller or PerceptionBridge.hpp changes)
-- `python -m pipeline run configs/<cfg>.json --output output/<name>`
-- `python -m pipeline grid experiments/<grid>.json --workers N`   (start with smoke.json)
+- `python -m pipeline run experiments/runs/<cfg>.json --output output/<name>`
+- `python -m pipeline grid experiments/grids/<grid>.json --workers N`   (start with smoke.json)
 
 ## Structure rules — keep the repo easy to follow
 - Docs: only `README.md`, `CLAUDE.md` and `AGENTS.md` at the root; every other .md goes in `docs/`.
   Exception: `pipeline/controllers/hidrive/AGENTS.md` stays next to the files it protects.
 - Prefer extending an existing file over adding a new script. A new error type is one file in
-  `pipeline/errors/`; a new single run is one JSON in `configs/`; a new grid is one JSON in `experiments/`.
+  `pipeline/errors/`; a new single run is one JSON in `experiments/runs/`; a new grid is one JSON in
+  `experiments/grids/`. Quick scratch outputs go to `output/scratch/` (not tracked).
 - No new top-level folders without asking. Results stay in `output/` (not in Git).
 - Never search `runtime/`; for esmini source, read the zip in `runtime/downloads/`.
 

@@ -33,6 +33,33 @@ so this file is the shared record of what was run and what it showed.
 | `tasc_tolerance` | Do the limits found on the three shared scenarios hold across the TASC car-car and cyclist cases? | 5355 | 2026-11-17 | Windows 11, `03043b2` | Each case draws its own errors. Car-car, 81 cases safe without error, 10 seeds each: OU 5/10/20% crash in 16/810 = 2.0% (0.0–5.1%, bootstrap over cases), 41/810 = 5.1% (2.8–7.5%) and 64/810 = 7.9% (5.8–10.4%) of runs, in 3, 24 and 41 cases; at 5% 15 of the 16 are the two cases with 0.20 and 0.32 m left without error (`1571693`, `1620061`). 10% miss rate (target vanishes): 76/810 = 9.4% (7.4–11.5%) in 52 cases. Too-far bias (no randomness, unchanged) crashes 2, 3, 14, 23 of 81 cases at +5, +10, +15, +20%; 58 do not crash up to +20%. Cluster ego/target 65/55 km/h (17 cases): 11 and 16 crash at +15 and +20%; cluster 45/35 (44 cases): 0 and 1 (`1549178`). Cyclist (a car-sized box), 20 safe cases: no crash from OU or bias up to 20%, miss rate 4/200. Car-car cases that crash without error (17): median relative impact +3.1, +8.5, +12.6 km/h at OU 5/10/20% (29%, 39% and 60% of those runs avoid the crash), +10 to +22 km/h with bias and never avoided; misses never avoid one | Random error starts to crash between 5% and 10% (at 5% almost only where the margin is a few decimetres) and grows slowly: 20% crashes 8% of runs. A 10% miss rate with the target vanishing crashes more often than 20% random error. "Too far crashes for sure from 15–20%" holds only where the margin is small: the minimum gap without error, divided by the range at braking start, ranks the cases (Spearman −0.50 with the random-error and miss crashes per case), and cases under 15% hold 20 of the 23 crashes at +20%. Sensitivity levels, not sensor values. The first run (2026-11-11, `e6f1024`, 5625 runs, one error pattern per seed shared by all cases) gave OU 1.2/6.8/16.8% and misses 5.2%, mostly from seeds 2 and 4 (OU) and 10 (misses); it is kept in `output/grids/tasc_tolerance_shared_seeds/` |
 | `fitted_profiles` | With the distance error and misses of two real detectors (fitted from K-Radar, `fitted` plugin), does HiDrive still avoid the TASC car-car crashes it avoids without error, and is it the distance error or the misses? | 5978 | 2026-11-17 | Windows 11, `407795b` | 81 of 98 cases safe without error; each case draws its own errors. Distance error alone: only the two cases with 0.20 and 0.32 m left without error (`1571693`, `1620061`) crash, in 11/20 (ASF) and 10/20 (PV-RCNN) runs; 0/1580 in the other 79. Misses alone: 36/810 = 4.4% (3.0–6.0%, bootstrap over cases) ASF and 32/810 = 4.0% (2.6–5.4%) PV-RCNN, in 29 and 25 cases, spread over all seeds. By the longest miss while the ego moves, both detectors together: under 0.5 s 5/709 crash, 0.5–1 s 9/152, 1–2 s 19/74, 2–3 s 14/33, 3 s or more 21/28. Both errors: 43/810 = 5.3% (3.1–8.1%) and 37/810 = 4.6% (2.7–7.2%), relative impact median 24 km/h, max 58. Cases that crash without error (17): misses avoid 0/170 and 1/170 of the crashes, the distance error 27/170 and 13/170 | The fitted distance error (0.24–0.71 m spread) matters only where the margin is a few decimetres. Misses decide: about 4% of runs crash, 54 of the 68 after a loss of 1 s or more while closing in. ASF and PV-RCNN do not differ beyond the noise. Error values fitted from one research car's log, not assumed. The first run, at `ab2d102` with one pattern per seed shared by all cases, gave 50/810 and 76/810 misses-only crashes, mostly from seed 9 (`output/grids/fitted_profiles_shared_seeds/`) |
 
+## Next steps
+In this order. Every step must keep current results identical when its new settings are off.
+
+1. **Sensor view.** The course brief asks how visual range and opening angle affect safety; no plugin
+   covers this yet. Add `pipeline/errors/fov.py`: the controller does not see a target further than
+   `max_range_m` or outside the cone of `angle_deg` (total opening angle). Then one grid that varies
+   `max_range_m` (e.g. 40 / 80 / 150 m) per scenario.
+2. **Fix known weak spots of the current plugins.**
+
+   | # | Weak spot | Fix |
+   |---|---|---|
+   | 1 | Range is wrong, but relative speed stays true: the observation is not consistent (biggest issue). | Speed error that follows the range error. |
+   | 2 | Miss and misclassification rates are the same at 5 m and 150 m. | Rates that grow with range (step 3). |
+   | 3 | No latency: the controller sees the present. | Setting for sensor delay (e.g. 50–150 ms). |
+   | 4 | Sensor type is mixed: size/identification on range fit a monocular camera, `ou` looks like radar. | State which sensor the model represents. |
+   | 5 | Timing differs: detection and identification update per frame, size every step. | One frame clock for all plugins. |
+   | 6 | `size` is the same in every seed. | Draw the size error once per run. |
+
+3. **Coupled errors (research question).** Real errors share causes (range, occlusion, weather), so bad
+   moments come together. Add a context step first in the chain: range, bearing, class and one slow
+   "sensor quality" `q(t)`. Miss rate, misclassification rate and noise then grow with range and `q`.
+   Question: *does assuming independent errors under- or over-estimate AEB risk?* Grid: independent vs
+   coupled with the **same average error rates**, paired by seed. Related work: PEM (Piazzoni et al.,
+   T-ITS 2024), Berk et al. (T-ITS 2020, dependent perception errors), Krajewski et al. (IV 2020).
+
+Values stay assumed in every step: results are sensitivity results, not measured sensor risk.
+
 ## Notes per grid
 
 ### Scenarios and the 2026-11-08 check

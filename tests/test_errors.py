@@ -149,8 +149,8 @@ class OuTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_registry_finds_every_plugin_and_no_helper(self):
-        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'identification', 'ou', 'size',
-                                                         'template'})
+        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'fov', 'identification', 'ou',
+                                                         'radar', 'size', 'template'})
 
     def test_defaults_are_filled_in(self):
         entries = config([{'type': 'detection'}, {'type': 'size', 'name': 'big', 'scale': 2}])['errors']
