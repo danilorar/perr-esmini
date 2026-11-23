@@ -76,7 +76,8 @@ def expand(grid):
         raise ValueError('Unknown grid settings: ' + ', '.join(sorted(extra)))
     groups = grid.get('groups') or [{'name': 'main', **{k: grid[k] for k in ('set', 'vary', 'seeds') if k in grid}}]
     jobs = []
-    names = scenarios.match(grid['scenarios']) if grid.get('scenarios') else list(scenarios.all_scenarios())
+    default = [k for k, v in scenarios.all_scenarios().items() if v.get('default', True)]
+    names = scenarios.match(grid['scenarios']) if grid.get('scenarios') else default
     for scenario, group in itertools.product(names, groups):
         vary = group.get('vary', {})
         for levels in itertools.product(*vary.values()):

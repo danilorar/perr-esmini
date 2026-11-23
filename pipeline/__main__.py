@@ -22,6 +22,10 @@ def command_run(args):
     out = Path(args.output) if args.output else OUTPUT / 'runs' / f'{stamp}_{config["scenario"]}_{uuid.uuid4().hex[:6]}'
     summary = run(config, out, plots=not args.no_plots)
     print(f'{summary["status"]}: collision={summary["collision"]}, results in {out}', flush=True)
+    if not args.no_replay:
+        args.run = str(out)
+        args.extra = []
+        command_replay(args)
 
 
 def command_grid(args):
@@ -61,6 +65,12 @@ def command_fit_kradar(args):
     print(compare_with_shared(summary.parent / 'parameters.json'))
 
 
+def command_plot_grid(args):
+    from .plots import grid_plots
+    out = grid_plots(args.output_dir)
+    print(f'Plots written to {out}')
+
+
 def command_replay(args):
     folder = Path(args.run).resolve()
     recording = folder / 'replay.dat'
@@ -85,6 +95,7 @@ def main():
     run.add_argument('config')
     run.add_argument('--output', help='results folder (must not exist); default output/runs/...')
     run.add_argument('--no-plots', action='store_true')
+    run.add_argument('--no-replay', action='store_true', help='skip opening the esmini viewer after the run')
     run.set_defaults(function=command_run)
 
     grid = commands.add_parser('grid', help='run many simulations from a grid file')
@@ -93,6 +104,10 @@ def main():
     grid.add_argument('--list', action='store_true', help='print the number of runs and stop')
     grid.add_argument('--output', help='results folder; default output/grids/<name>')
     grid.set_defaults(function=command_grid)
+
+    plot_grid = commands.add_parser('plot-grid', help='write summary plots from a finished grid output folder')
+    plot_grid.add_argument('output_dir', help='grid output folder containing results.csv')
+    plot_grid.set_defaults(function=command_plot_grid)
 
     commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
 

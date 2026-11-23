@@ -1,0 +1,28 @@
+{
+    "name": "ncap_snr_grid",
+    "description": "SNR radar model on NCAP-inspired CCR scenarios. Tests whether fog degrades detection probability enough to change AEB outcomes at 50-110 m approach range — the regime TASC scenarios do not cover.",
+    "scenarios": ["ncap_ccrs_50", "ncap_ccrs_80", "ncap_ccrm_50"],
+    "groups": [
+        {
+            "name": "no_error",
+            "set": {"errors": []},
+            "seeds": [1, 2, 3, 4, 5]
+        },
+        {
+            "name": "radar_clear",
+            "set": {"errors": [
+                {"type": "fov", "fov_deg": 60, "max_range_m": 150},
+                {"type": "radar", "environment": "clear"}
+            ]},
+            "seeds": [1, 2, 3, 4, 5]
+        },
+        {
+            "name": "radar_fog",
+            "set": {"errors": [
+                {"type": "fov", "fov_deg": 60, "max_range_m": 150},
+                {"type": "radar", "environment": "fog"}
+            ]},
+            "seeds": [1, 2, 3, 4, 5]
+        }
+    ]
+}

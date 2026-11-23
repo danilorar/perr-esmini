@@ -200,7 +200,8 @@ class TascImportTests(unittest.TestCase):
             scenario = scenarios.get('tasc_car_1554431')
             self.assertEqual((scenario.ego, scenario.stop_time_s), ('object_1', 10.0))
             self.assertEqual(scenarios.match(['gidas_1549178', 'tasc_car_*']), ['gidas_1549178', 'tasc_car_1554431'])
-            self.assertEqual({job['scenario'] for job in grid.expand({'seeds': 1})}, set(scenarios.all_scenarios()))
+            default = {k for k, v in scenarios.all_scenarios().items() if v.get('default', True)}
+            self.assertEqual({job['scenario'] for job in grid.expand({'seeds': 1})}, default)
             self.assertEqual([job['scenario'] for job in grid.expand({'scenarios': ['tasc_*']})], ['tasc_car_1554431'])
             with self.assertRaises(ValueError):
                 scenarios.match(['tasc_cyclist_*'])

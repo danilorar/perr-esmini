@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<OpenSCENARIO xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="OpenSCENARIO.xsd">
+  <FileHeader description="NCAP-inspired CCRm: ego at 50 kph, target moving at 20 kph, 5 s headway (69 m). Closing speed 30 kph gives more time in the detection-threshold range than CCRs." author="aep pipeline" revMajor="1" revMinor="0" date="2026-11-19T00:00:00"/>
+  <ParameterDeclarations/>
+  <CatalogLocations/>
+  <RoadNetwork>
+    <LogicFile filepath="ncap_ccrm_50.xodr"/>
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="object_1">
+      <Vehicle name="ego_car" vehicleCategory="car">
+        <BoundingBox>
+          <Center x="0.0" y="0.0" z="0.7"/>
+          <Dimensions width="1.8" length="4.5" height="1.5"/>
+        </BoundingBox>
+        <Performance maxSpeed="80" maxDeceleration="10" maxAcceleration="10"/>
+        <Axles>
+          <FrontAxle maxSteering="30" wheelDiameter="0.6" trackWidth="1.8" positionX="2.4" positionZ="0.3"/>
+          <RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3"/>
+        </Axles>
+        <Properties>
+          <Property name="model_id" value="0"/>
+          <Property name="control" value="internal"/>
+        </Properties>
+      </Vehicle>
+      <ObjectController>
+        <Controller name="HiDriveController">
+          <Properties>
+            <Property name="timeGap" value="1.0"/>
+            <Property name="mode" value="override"/>
+            <Property name="ADF_enabled" value="true"/>
+            <Property name="Speed_limit" value="100"/>
+          </Properties>
+        </Controller>
+      </ObjectController>
+    </ScenarioObject>
+    <ScenarioObject name="object_2">
+      <Vehicle name="target_car" vehicleCategory="car">
+        <BoundingBox>
+          <Center x="0.0" y="0.0" z="0.7"/>
+          <Dimensions width="1.8" length="4.5" height="1.5"/>
+        </BoundingBox>
+        <Performance maxSpeed="80" maxDeceleration="10" maxAcceleration="10"/>
+        <Axles>
+          <FrontAxle maxSteering="30" wheelDiameter="0.6" trackWidth="1.8" positionX="2.4" positionZ="0.3"/>
+          <RearAxle maxSteering="0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3"/>
+        </Axles>
+        <Properties>
+          <Property name="model_id" value="0"/>
+          <Property name="control" value="internal"/>
+        </Properties>
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <Private entityRef="object_1">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="0.0" y="-1.75" h="0.0" z="0.1"/>
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="1" dynamicsDimension="time"/>
+                <SpeedActionTarget>
+                  <!-- 50 kph = 13.889 m/s -->
+                  <AbsoluteTargetSpeed value="13.889"/>
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
+          </PrivateAction>
+          <PrivateAction>
+            <ControllerAction>
+              <ActivateControllerAction longitudinal="true" lateral="true"/>
+            </ControllerAction>
+          </PrivateAction>
+        </Private>
+        <Private entityRef="object_2">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <!-- 5 s headway at 50 kph = 69.4 m centre-to-centre ahead of ego -->
+                <WorldPosition x="69.4" y="-1.75" h="0.0" z="0.1"/>
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <LongitudinalAction>
+              <SpeedAction>
+                <SpeedActionDynamics dynamicsShape="step" value="1" dynamicsDimension="time"/>
+                <SpeedActionTarget>
+                  <!-- 20 kph = 5.556 m/s — closing speed 30 kph -->
+                  <AbsoluteTargetSpeed value="5.556"/>
+                </SpeedActionTarget>
+              </SpeedAction>
+            </LongitudinalAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <Story name="main_story">
+      <Act name="main_act">
+        <ManeuverGroup name="main_group" maximumExecutionCount="1">
+          <Actors selectTriggeringEntities="false"/>
+        </ManeuverGroup>
+        <StartTrigger>
+          <ConditionGroup>
+            <Condition name="start" delay="0" conditionEdge="none">
+              <ByValueCondition>
+                <SimulationTimeCondition value="0" rule="greaterOrEqual"/>
+              </ByValueCondition>
+            </Condition>
+          </ConditionGroup>
+        </StartTrigger>
+        <StopTrigger/>
+      </Act>
+    </Story>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="stop" delay="0" conditionEdge="none">
+          <ByValueCondition>
+            <SimulationTimeCondition value="20" rule="greaterThan"/>
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>
