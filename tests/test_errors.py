@@ -289,12 +289,15 @@ class ChainTests(unittest.TestCase):
         self.assertEqual((seen['x'], seen['y']), (30.0, 1.0))
 
 
-def fitted_file(folder, rows=(), runs=(1, 1, 1, 2, 10), p_miss=0.1):
-    """A parameter file as fit-kradar writes it, with one profile "test": b 0.2 m, spread 0.5 m, 80% of it OU."""
+def fitted_file(folder, rows=(), runs=(1, 1, 1, 2, 10), p_miss=0.1, target=None):
+    """A parameter file as fit-kradar writes it, with one profile "test": b 0.2 m, spread 0.5 m, 80% of it OU.
+    target: the target_offset block, left out when None."""
     shape = {'cell': 'all', 'b_m': 0.2, 'sd_m': 0.5, 'sigma_ou_m': 0.5 * math.sqrt(0.8), 'tau_s': 1.0, 'p_miss': p_miss}
+    profile = {'frame_period_s': 0.1, 'cells': [shape, *rows], 'miss_runs_frames': list(runs)}
+    if target is not None:
+        profile['target_offset'] = target
     path = Path(folder) / 'parameters.json'
-    path.write_text(json.dumps({'test': {'frame_period_s': 0.1, 'cells': [shape, *rows],
-                                         'miss_runs_frames': list(runs)}}), encoding='utf-8')
+    path.write_text(json.dumps({'test': profile}), encoding='utf-8')
     return str(path)
 
 
@@ -378,9 +381,46 @@ class FittedTests(unittest.TestCase):
             self.assertAlmostEqual(run.step(step, gap=gap)[1]['range'], seen, places=12)
         run.log()
 
+    def test_target_offset_holds_for_the_whole_run_and_replaces_b(self):
+        target = {'min_frames': 20, 'offsets_m': [-1.0, 2.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.0}}}
+        seen = set()
+        for seed in range(1, 30):
+            run = ChainRun([self.entry(file={'target': target}, offset='target', misses=False)], seed=seed)
+            ranges = {run.step(step)[1]['range'] for step in range(30)}
+            rows = run.log()
+            self.assertEqual(len(ranges), 1)                       # no spread left: the offset alone, all run
+            offset = ranges.pop() - 30.0
+            self.assertIn(round(offset, 9), (-1.0, 2.0))          # b 0.2 is not added
+            self.assertAlmostEqual(float(rows[0]['fitted.offset_m']), offset, places=12)
+            seen.add(round(offset, 9))
+        self.assertEqual(seen, {-1.0, 2.0})
+
+    def test_target_offset_uses_the_spread_around_the_track_means(self):
+        target = {'min_frames': 20, 'offsets_m': [0.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.3}}}
+        run = ChainRun([self.entry(file={'target': target}, offset='target', misses=False)], seed=4)
+        for step in range(25):
+            run.step(step)
+        row = run.log()[12]
+        self.assertAlmostEqual(float(row['fitted.sigma_ou_m']), 0.3 * math.sqrt(0.5), places=12)
+        self.assertAlmostEqual(float(row['fitted.sigma_white_m']), 0.3 * math.sqrt(0.5), places=12)
+        self.assertEqual(float(row['fitted.bias_m']), 0.0)
+
+    def test_offset_none_leaves_the_old_model(self):
+        target = {'min_frames': 20, 'offsets_m': [5.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.0}}}
+        plain = ChainRun([self.entry(misses=False)], seed=3)
+        with_block = ChainRun([self.entry(file={'target': target}, misses=False)], seed=3)
+        self.assertEqual([plain.step(s)[1]['range'] for s in range(25)],
+                         [with_block.step(s)[1]['range'] for s in range(25)])
+        plain.log()
+        with_block.log()
+
     def test_rejects_missing_file_profile_or_row(self):
         for bad in ({'parameters': str(Path(self.folder.name) / 'none.json')}, {'profile': 'other'},
-                    {'condition': 'fog'}, {'condition': 'dry'}, {'lost_target_motion': 'frozen'}):
+                    {'condition': 'fog'}, {'condition': 'dry'}, {'lost_target_motion': 'frozen'},
+                    {'offset': 'target'}, {'offset': 'per_frame'}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 config([{**self.entry(), **bad}])
 

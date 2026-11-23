@@ -31,6 +31,8 @@ Sizes: detector length and width over the reference's, per class, for every refe
 
 parameters.json also lists the lengths of the lead's miss runs, which the fitted error plugin draws from. A run cut off
 by the end of a track or of a block of test frames counts with the length seen, so long losses are if anything short.
+It also lists each lead track's mean error and the spread around it (target_offset), for the plugin's offset "target":
+the log is a narrow spread plus a few targets read too far for their whole track, which one Gaussian does not give.
 
 Check: fit on half of the recordings of each weather group (A) and compare with the other half (B).
 """
@@ -205,6 +207,28 @@ def cell(rows):
             'targets_over_1m_far': float((long > 1).mean()), 'targets_over_1m_near': float((long < -1).mean())}
 
 
+def target_offsets(lead):
+    """Each lead track's mean error (tracks with LONG_TRACK+ paired frames) and the error left around it.
+
+    The log's errors are a narrow spread plus a few targets read too far for their whole track; one Gaussian with the
+    pooled spread is wider in the middle and gives almost none of those targets. The fitted plugin with offset
+    "target" draws one of these means per target for the whole run and adds the rest as OU + white noise, with the
+    spread per cell (the error around each track's mean) and tau from all rows."""
+    hits = lead[lead.hit]
+    hits = hits[hits.groupby('track_id').error_m.transform('size') >= LONG_TRACK]
+    hits = hits.assign(u=hits.error_m - hits.groupby('track_id').error_m.transform('mean'))
+    shape = fit_time_structure(*autocovariance(hits))
+
+    def residual(rows):
+        return {'rows': len(rows), 'sd_m': float(np.sqrt((rows.u ** 2).mean()))}
+
+    cells = {'all': residual(hits)}
+    cells.update({f'range {band} m': residual(g) for band, g in hits.groupby('band') if '-' in band})
+    cells.update({f'weather {w}': residual(g) for w, g in hits.groupby('group')})
+    return {'min_frames': LONG_TRACK, 'offsets_m': sorted(float(v) for v in hits.groupby('track_id').error_m.mean()),
+            'tau_s': shape['tau_s'], 'share_ou': shape['share_ou'], 'residual': cells}
+
+
 def tables(lead):
     import pandas as pd
     rows = [{'cell': 'all', **cell(lead)}]
@@ -313,7 +337,7 @@ def fit_detector(data, meta, detector):
     return {'table': tables(lead), 'sizes': size_table(pairs), 'ghosts': ghosts(unpaired, reference, test_frames),
             'check': both, 'correlation': correlation, 'stretch': stretch, 'shift': shift, 'lead_rows': len(lead),
             'vehicle_rows': len(pairs), 'vehicle_hit': float(pairs.hit.mean()),
-            'miss_runs_frames': sorted(int(n) for n in miss_stretches(lead))}
+            'miss_runs_frames': sorted(int(n) for n in miss_stretches(lead)), 'target_offset': target_offsets(lead)}
 
 
 def markdown(frame, digits=3):
@@ -437,7 +461,10 @@ def run(data, meta, detectors, output, check=True):
         parameters[detector] = {'frame_period_s': DT_S, 'frame_shift_m': result['shift'],
                                 'cells': result['table'].to_dict('records'),
                                 'miss_runs_frames': result['miss_runs_frames'],
-                                'sizes': result['sizes'].to_dict('records'), 'ghosts': result['ghosts']}
+                                'sizes': result['sizes'].to_dict('records'), 'ghosts': result['ghosts'],
+                                'target_offset': result['target_offset']}
+        offset = result['target_offset']
+        spread = ', '.join(f'{name} {cell["sd_m"]:.3f}' for name, cell in offset['residual'].items())
         halves = result['check'][['cell', 'rows_A', 'rows_B', 'b_m_A', 'b_m_B', 'sd_m_A', 'sd_m_B', 'tau_s_A', 'tau_s_B',
                                   'p_miss_A', 'p_miss_B', 't_miss_s_A', 't_miss_s_B', 'B_inside_A_90pct']]
         g = result['ghosts']
@@ -445,6 +472,11 @@ def run(data, meta, detectors, output, check=True):
                   f'Frame shift added to x, y: {result["shift"]} m. Reference vehicles in the area (test frames): '
                   f'{result["vehicle_rows"]}, paired {result["vehicle_hit"]:.3f}. Lead rows: {result["lead_rows"]}.', '',
                   '### Lead: distance error and misses', '', markdown(result['table'][columns]), '',
+                  '### Lead: whole-track offsets (fitted plugin, offset "target")', '',
+                  f'Mean error of each of the {len(offset["offsets_m"])} lead tracks with {offset["min_frames"]}+ '
+                  f'paired frames, m: ' + ', '.join(f'{v:.2f}' for v in offset['offsets_m']) + '.', '',
+                  f'Error around each track\'s mean: sd {spread} m; tau {offset["tau_s"]:.2f} s, '
+                  f'OU share of the variance {offset["share_ou"]:.2f}.', '',
                   '### Sizes per class', '', markdown(result['sizes']), '',
                   f'Unpaired boxes in the ego lane: {g["unpaired_in_lane_per_s"]:.3f} per second; with no reference '
                   f'object within 5 m: {g["nothing_within_5m_per_s"]:.3f} per second '

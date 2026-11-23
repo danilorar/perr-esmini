@@ -98,6 +98,24 @@ class FitKradarTest(unittest.TestCase):
         self.assertAlmostEqual(fit['p_miss'], p_miss, delta=0.015)
         self.assertAlmostEqual(fit['t_miss_s'], t_miss, delta=0.04)
 
+    def test_target_offsets_are_track_means_and_the_rest_is_the_spread_around_them(self):
+        rng = np.random.default_rng(2)
+        offsets = {'T0': -1.0, 'T1': 0.0, 'T2': 2.5}
+        rows = []
+        for track, offset in offsets.items():
+            for frame in range(400):
+                band = '0-25' if frame < 200 else '25-45'
+                rows.append((track, 'R0', frame, True, offset + 0.2 * rng.normal(), band, 'normal'))
+        rows.append(('T3', 'R0', 0, True, 9.0, '0-25', 'normal'))          # too short: left out
+        lead = pd.DataFrame(rows, columns=['track_id', 'recording_id', 'frame_idx', 'hit', 'error_m', 'band', 'group'])
+        fit = fit_kradar.target_offsets(lead)
+        self.assertEqual(len(fit['offsets_m']), 3)
+        for found, true in zip(fit['offsets_m'], sorted(offsets.values())):
+            self.assertAlmostEqual(found, true, delta=0.05)
+        self.assertEqual(set(fit['residual']), {'all', 'range 0-25 m', 'range 25-45 m', 'weather normal'})
+        self.assertAlmostEqual(fit['residual']['all']['sd_m'], 0.2, delta=0.02)
+        self.assertLess(fit['tau_s'], 0.3)                                  # white noise: no correlation over time
+
 
 if __name__ == '__main__':
     unittest.main()
