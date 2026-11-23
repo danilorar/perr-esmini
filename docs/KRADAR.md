@@ -116,6 +116,9 @@ In the simulation (grid `fitted_profiles`: the 81 TASC car-car cases that HiDriv
 - Distance error alone crashes only the two cases that keep 0.20 and 0.32 m without error. The assumed 5/10/20% error
   crashed 2.0/5.1/7.9% of runs in the same cases (grid `tasc_tolerance`).
 - Misses decide: 54 of the 68 miss crashes follow a loss of 1 s or more while closing in.
+- With `offset` `target` (each car keeps one whole-run offset from the log, grid `fitted_target_offsets`), distance
+  error alone crashes 15 (1.9%) ASF and 12 (1.5%) PV-RCNN++ runs. The two extra ASF cases (2.5 and 2.8 m
+  margin) both drew the car ASF reads 2.26 m too far; PV-RCNN++'s largest offset (1.08 m) crashed nothing.
 
 Details of both grids: [EXPERIMENTS.md](EXPERIMENTS.md).
 
@@ -128,6 +131,8 @@ Details of both grids: [EXPERIMENTS.md](EXPERIMENTS.md).
 - `profile`: `asf` or `pvrcnn`.
 - `condition`: `range` uses the band of the current distance; `all` uses one value for all distances.
 - `misses: false` gives the distance error only; `range_error: false` gives the misses only.
+- `offset: "target"` gives each car one offset for the whole run, drawn from the per-car mean errors of the log, plus
+  the spread around them; the default `none` is one bias and one spread for all cars.
 - The other settings are in the README's error plugin table. Ready-made grid: `experiments/fitted_profiles.json`.
 
 ## Limits
