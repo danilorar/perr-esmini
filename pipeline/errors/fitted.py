@@ -26,6 +26,10 @@ the spread around each track's mean (per row as above) and the tau of that rest:
 The log's errors are a narrow spread plus a few targets read too far for their whole track (ASF: one car 2.3 m too far
 down to 11 m); one Gaussian with the pooled spread is wider in the middle and almost never gives such a target.
 
+offset "fixed" is "target" with the same offset for every target, offset_m (metres, > 0 too far), for sensitivity
+studies: how large a whole-run offset can be before a case crashes. spread_scale multiplies sigma_ou and sigma_white
+in every mode (0: no random part; 1, the default: as fitted).
+
 A missed frame is handled by the detection plugin's code with lost_target, lost_target_motion and
 lost_target_distance, after the range error, so the remembered range includes it. Put this plugin last, as detection,
 and do not stack it with ou or detection. range_error and misses switch the two parts on and off; each has its own
@@ -41,11 +45,12 @@ from . import detection
 
 ROOT = Path(__file__).resolve().parents[2]
 SETTINGS = {'parameters': 'pipeline/kradar/parameters.json', 'profile': '', 'condition': 'all', 'offset': 'none',
-            'range_error': True, 'misses': True, 'lost_target': 'vanish', 'lost_target_motion': 'live',
-            'lost_target_distance': 'frozen_difference'}
+            'offset_m': 0.0, 'spread_scale': 1.0, 'range_error': True, 'misses': True, 'lost_target': 'vanish',
+            'lost_target_motion': 'live', 'lost_target_distance': 'frozen_difference'}
 LOST = ('lost_target', 'lost_target_motion', 'lost_target_distance')
-CHOICES = {'condition': ('all', 'range', 'normal', 'rain', 'fog', 'snow'), 'offset': ('none', 'target'),
+CHOICES = {'condition': ('all', 'range', 'normal', 'rain', 'fog', 'snow'), 'offset': ('none', 'target', 'fixed'),
            **{key: detection.CHOICES[key] for key in LOST}}
+RANGES = {'offset_m': (-20.0, 20.0), 'spread_scale': (0.0, 10.0)}
 LOG = ('bias_m', 'offset_m', 'sigma_ou_m', 'sigma_white_m', 'z', 'w', 'error_m', 'missed')
 
 
@@ -83,11 +88,12 @@ def load(settings):
     else:
         chosen = [(-math.inf, math.inf, cells.get(f'weather {condition}'))]
     tau, offsets = shape['tau_s'], []
-    if settings['offset'] == 'target':
+    if settings['offset'] in ('target', 'fixed'):
         target = profile.get('target_offset')
         if not target or not target['offsets_m']:
             raise ValueError(f'{path}: profile {settings["profile"]} has no target_offset; rerun fit-kradar')
-        tau, share_ou, offsets = target['tau_s'], target['share_ou'], target['offsets_m']
+        tau, share_ou = target['tau_s'], target['share_ou']
+        offsets = target['offsets_m'] if settings['offset'] == 'target' else [settings['offset_m']]
     rows = []
     for low, high, cell in chosen:
         if cell is None or any(not math.isfinite(cell[key]) for key in ('b_m', 'sd_m', 'p_miss')):
@@ -102,6 +108,7 @@ def load(settings):
             if rest is None:
                 raise ValueError(f'{path}: profile {settings["profile"]} has no target_offset row {cell["cell"]}')
             b, sd = 0.0, rest['sd_m']
+        sd *= settings['spread_scale']
         rows.append((low, high, {'cell': cell['cell'], 'b_m': b, 'p_miss': p, 'enter': enter,
                                  'sigma_ou_m': sd * math.sqrt(share_ou),
                                  'sigma_white_m': sd * math.sqrt(1.0 - share_ou)}))

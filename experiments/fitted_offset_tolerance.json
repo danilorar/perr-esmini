@@ -1,0 +1,78 @@
+{
+  "name": "fitted_offset_tolerance",
+  "description": "How large may a whole-run too-far offset be before HiDrive's TASC car-car cases that are safe without error start to crash, and where do the cars of the K-Radar log fall? Every target keeps offset_m for the whole run (fitted, offset fixed), as ASF's car read 2.26 m too far from 49 m down to 11 m; offset_only has no random part (deterministic, one seed), offset_noise adds the spread around each car's mean of PV-RCNN++ (0.12 m under 25 m) or ASF (0.32 m), 5 seeds. Misses off; lost target as in fitted_profiles. 9800 runs.",
+  "scenarios": [
+    "tasc_car_*"
+  ],
+  "base": {
+    "errors": [
+      {
+        "type": "fitted",
+        "condition": "range",
+        "offset": "fixed",
+        "misses": false,
+        "lost_target": "predict",
+        "lost_target_motion": "frozen",
+        "lost_target_distance": "frozen_object"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "no_error",
+      "set": {
+        "errors": []
+      },
+      "seeds": [
+        1
+      ]
+    },
+    {
+      "name": "offset_only",
+      "set": {
+        "errors.fitted.profile": "pvrcnn",
+        "errors.fitted.spread_scale": 0.0
+      },
+      "vary": {
+        "errors.fitted.offset_m": [
+          0.0,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
+      },
+      "seeds": [
+        1
+      ]
+    },
+    {
+      "name": "offset_noise",
+      "vary": {
+        "errors.fitted.profile": [
+          "pvrcnn",
+          "asf"
+        ],
+        "errors.fitted.offset_m": [
+          0.0,
+          0.5,
+          1.0,
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 5
+      }
+    }
+  ]
+}

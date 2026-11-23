@@ -407,6 +407,29 @@ class FittedTests(unittest.TestCase):
         self.assertAlmostEqual(float(row['fitted.sigma_white_m']), 0.3 * math.sqrt(0.5), places=12)
         self.assertEqual(float(row['fitted.bias_m']), 0.0)
 
+    def test_fixed_offset_is_the_same_for_every_target_and_spread_scale_scales_the_rest(self):
+        target = {'min_frames': 20, 'offsets_m': [-1.0, 2.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.4}}}
+        for seed in (1, 2, 3):
+            run = ChainRun([self.entry(file={'target': target}, offset='fixed', offset_m=1.5, spread_scale=0.0,
+                                       misses=False)], seed=seed)
+            self.assertEqual({run.step(step)[1]['range'] for step in range(30)}, {31.5})
+            run.log()
+        run = ChainRun([self.entry(file={'target': target}, offset='fixed', offset_m=1.5, spread_scale=2.5,
+                                   misses=False)], seed=1)
+        for step in range(25):
+            run.step(step)
+        row = run.log()[12]
+        self.assertAlmostEqual(float(row['fitted.sigma_ou_m']), 2.5 * 0.4 * math.sqrt(0.5), places=12)
+        self.assertAlmostEqual(float(row['fitted.offset_m']), 1.5, places=12)
+
+    def test_spread_scale_one_leaves_the_old_model(self):
+        plain = ChainRun([self.entry(misses=False)], seed=3)
+        scaled = ChainRun([self.entry(misses=False, spread_scale=1.0)], seed=3)
+        self.assertEqual([plain.step(s)[1]['range'] for s in range(25)], [scaled.step(s)[1]['range'] for s in range(25)])
+        plain.log()
+        scaled.log()
+
     def test_offset_none_leaves_the_old_model(self):
         target = {'min_frames': 20, 'offsets_m': [5.0], 'tau_s': 0.5, 'share_ou': 0.5,
                   'residual': {'all': {'rows': 10, 'sd_m': 0.0}}}
@@ -420,7 +443,8 @@ class FittedTests(unittest.TestCase):
     def test_rejects_missing_file_profile_or_row(self):
         for bad in ({'parameters': str(Path(self.folder.name) / 'none.json')}, {'profile': 'other'},
                     {'condition': 'fog'}, {'condition': 'dry'}, {'lost_target_motion': 'frozen'},
-                    {'offset': 'target'}, {'offset': 'per_frame'}):
+                    {'offset': 'target'}, {'offset': 'fixed'}, {'offset': 'per_frame'}, {'spread_scale': -1.0},
+                    {'offset_m': 50.0}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 config([{**self.entry(), **bad}])
 
