@@ -1,0 +1,27 @@
+{
+  "name": "baseline_all",
+  "description": "Noise-free baseline for all CCR + VRU-CB scenarios, 50 seeds each.",
+  "scenarios": [
+    "ncap_ccrs_50",
+    "ncap_ccrb_50",
+    "ncap_ccrm_50",
+    "tasc_car_1549178",
+    "tasc_car_1554254",
+    "ncap_cbna_50",
+    "ncap_cbnao_50",
+    "ncap_cbfa_50",
+    "ncap_cbla_50"
+  ],
+  "groups": [
+    {
+      "name": "baseline",
+      "set": {
+        "errors": []
+      },
+      "seeds": {
+        "first": 1,
+        "count": 50
+      }
+    }
+  ]
+}
