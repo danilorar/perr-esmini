@@ -1,0 +1,81 @@
+{
+  "name": "step7_tasc_all",
+  "description": "All 5 TASC car-car cases: range, lateral, velocity_radial, velocity_tangential at mid (0.5) and high (1.0/2.87%/1.0°) with outliers on. 50 seeds per group.",
+  "scenarios": [
+    "tasc_car_1549178",
+    "tasc_car_1553188",
+    "tasc_car_1554254",
+    "tasc_car_1555218",
+    "tasc_car_1556311"
+  ],
+  "base": {
+    "controller": "hidrive",
+    "errors": []
+  },
+  "groups": [
+    {
+      "name": "baseline",
+      "set": { "errors": [] },
+      "seeds": { "first": 1, "count": 50 }
+    },
+    {
+      "name": "range_on",
+      "set": {
+        "errors": [
+          {
+            "type": "ou",
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.ou.mae_pct": [1.44, 2.87] },
+      "seeds": { "first": 1, "count": 50 }
+    },
+    {
+      "name": "lateral_on",
+      "set": {
+        "errors": [
+          {
+            "type": "lateral",
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.lateral.sigma_theta_deg": [0.5, 1.0] },
+      "seeds": { "first": 1, "count": 50 }
+    },
+    {
+      "name": "velocity_radial_on",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_tangential_mps": 0.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_radial_mps": [0.5, 1.0] },
+      "seeds": { "first": 1, "count": 50 }
+    },
+    {
+      "name": "velocity_tangential_on",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.0,
+            "bias_radial_mps": 0.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_tangential_mps": [0.5, 1.0] },
+      "seeds": { "first": 1, "count": 50 }
+    }
+  ]
+}
