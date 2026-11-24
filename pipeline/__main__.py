@@ -66,6 +66,11 @@ def command_fit_kradar(args):
     print(compare_with_shared(summary.parent / 'parameters.json'))
 
 
+def command_analyze_grid(args):
+    from .analyze_grid import analyze
+    analyze(args.grid, csv_out=args.csv)
+
+
 def command_replay(args):
     folder = Path(args.run).resolve()
     recording = folder / 'replay.dat'
@@ -117,6 +122,11 @@ def main():
     fit.add_argument('--other-data', action='store_true',
                      help='fit tables that differ from the sha256 sums in pipeline/kradar/tables.sha256')
     fit.set_defaults(function=command_fit_kradar)
+
+    analyze = commands.add_parser('analyze-grid', help='summarise a grid: gap, brake delay, ΔTTC, crash rate per group')
+    analyze.add_argument('grid', help='grid output folder (contains runs/)')
+    analyze.add_argument('--csv', help='write table to this CSV file')
+    analyze.set_defaults(function=command_analyze_grid)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')
     replay.add_argument('run', help='results folder of the run')
