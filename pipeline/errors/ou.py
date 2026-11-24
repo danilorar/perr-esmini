@@ -94,7 +94,11 @@ class Error:
             if self.bias:  # skipped at 0, so runs without a bias stay identical to the ones before bias_pct existed
                 error = self.reference * self.bias / 100.0 * max(0.0, r - self.zero) / (self.reference - self.zero) + error
             outlier_m = self._outlier_z.get(target['id'], 0.0) * 5.0 * sigma
-            target['range'] = target['range'] + error + outlier_m
+            # Clamp to 0.1 m: a large negative outlier must not make the target disappear
+            # (negative range hides it in Chain.flags); instead the target appears very close
+            # and the controller emergency-brakes. Without the clamp, 5×sigma outliers at
+            # large initial ranges (sigma≈8m at 10% MAE, 70m) produced range < 0 → valid=0.
+            target['range'] = max(0.1, target['range'] + error + outlier_m)
             target['log'].update(z=z, sigma_m=sigma, error_m=error, outlier_m=outlier_m)
 
     def describe(self):

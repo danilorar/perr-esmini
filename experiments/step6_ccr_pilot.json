@@ -1,6 +1,6 @@
 {
   "name": "step6_ccr_pilot",
-  "description": "Pilot: step6_ccr on ncap_ccrs_50 only. Checks timing and that all groups run. 226 runs.",
+  "description": "Pilot: step6_ccr on ncap_ccrs_50 only. K-Radar anchored levels (0.5×/1×/2× at 30 m). 226 runs.",
   "scenarios": ["ncap_ccrs_50"],
   "groups": [
     {
@@ -11,25 +11,25 @@
     {
       "name": "range_off",
       "set": {"errors": [{"type": "ou", "noise": "mixture", "p_outlier": 0}]},
-      "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+      "vary": {"errors.ou.mae_pct": [0.72, 1.44, 2.87]},
       "seeds": {"first": 1, "count": 5}
     },
     {
       "name": "range_on",
       "set": {"errors": [{"type": "ou", "noise": "mixture", "p_outlier": 1}]},
-      "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+      "vary": {"errors.ou.mae_pct": [0.72, 1.44, 2.87]},
       "seeds": {"first": 1, "count": 20}
     },
     {
       "name": "lateral_off",
       "set": {"errors": [{"type": "lateral", "noise": "mixture", "p_outlier": 0}]},
-      "vary": {"errors.lateral.sigma_theta_deg": [1.0, 2.0, 4.0]},
+      "vary": {"errors.lateral.sigma_theta_deg": [0.25, 0.5, 1.0]},
       "seeds": {"first": 1, "count": 5}
     },
     {
       "name": "lateral_on",
       "set": {"errors": [{"type": "lateral", "noise": "mixture", "p_outlier": 1}]},
-      "vary": {"errors.lateral.sigma_theta_deg": [1.0, 2.0, 4.0]},
+      "vary": {"errors.lateral.sigma_theta_deg": [0.25, 0.5, 1.0]},
       "seeds": {"first": 1, "count": 20}
     },
     {
