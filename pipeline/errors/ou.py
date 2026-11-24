@@ -8,14 +8,23 @@ r is the true range. bias_pct > 0 reads the target too far, < 0 too near; it fol
 mae_pct = bias_pct gives a random and a constant error of the same mean size. With a bias, mae_pct is the size of the
 random part only. The distance law and correlation time are assumptions for sensitivity studies, not
 calibrated sensor values.
+
+noise='mixture': in addition to the per-frame OU noise, each target draws a persistent whole-track range offset once
+at the first observation, from N(0, (5 * bias_m_at_reference)²) with probability p_outlier. This matches the
+per-target outlier mechanism in lateral.py and velocity.py so the three error types are on equal footing.
+sigma_outlier = 5 * mae_pct/100 * reference_range_m * SIGMA_PER_MAE, evaluated at the reference range.
 """
 import math
 import random
 
-SETTINGS = {'mae_pct': 5.0, 'bias_pct': 0.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0, 'reference_range_m': 100.0}
+from pipeline.errors.outliers import TargetOutliers
+
+SETTINGS = {'mae_pct': 5.0, 'bias_pct': 0.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0,
+            'reference_range_m': 100.0, 'p_outlier': 0.02, 'noise': 'gaussian'}
 RANGES = {'mae_pct': (0, 100), 'bias_pct': (-100, 100), 'correlation_time_s': (0.01, 20), 'zero_range_m': (0, 499),
-          'reference_range_m': (1, 500)}
-LOG = ('z', 'sigma_m', 'error_m')
+          'reference_range_m': (1, 500), 'p_outlier': (0.0, 1.0)}
+CHOICES = {'noise': ('gaussian', 'mixture')}
+LOG = ('z', 'sigma_m', 'error_m', 'outlier_m')
 SIGMA_PER_MAE = math.sqrt(math.pi / 2.0)
 
 
@@ -67,6 +76,15 @@ class Error:
         self.z = {target['name']: unit_samples(run.seed, settings['correlation_time_s'], target['id'], run.dt_s, run.steps)
                   for target in run.targets}
 
+        # Mixture: per-target persistent outlier drawn once; zero in gaussian mode.
+        if settings.get('noise', 'gaussian') == 'mixture':
+            sigma_outlier = 5.0 * self.pct / 100.0 * self.reference * SIGMA_PER_MAE
+            ol = TargetOutliers(f'{run.seed}:{run.label}:range',
+                                settings.get('p_outlier', 0.02), sigma_outlier)
+            self._outlier = {target['id']: ol.draw(target['id']) for target in run.targets}
+        else:
+            self._outlier = {}
+
     def perceive(self, step, t, ego, targets):
         for target in targets:
             r = target['true_range']
@@ -76,8 +94,9 @@ class Error:
             error = sigma * z
             if self.bias:  # skipped at 0, so runs without a bias stay identical to the ones before bias_pct existed
                 error = self.reference * self.bias / 100.0 * max(0.0, r - self.zero) / (self.reference - self.zero) + error
-            target['range'] = target['range'] + error
-            target['log'].update(z=z, sigma_m=sigma, error_m=error)
+            outlier_m = self._outlier.get(target['id'], 0.0)
+            target['range'] = target['range'] + error + outlier_m
+            target['log'].update(z=z, sigma_m=sigma, error_m=error, outlier_m=outlier_m)
 
     def describe(self):
         return {'transition': 'z_next = exp(-dt/tau) * z + sqrt(1 - exp(-2*dt/tau)) * N(0,1), from N(0,1), one stream per object',

@@ -1,0 +1,66 @@
+{
+  "name": "step6_vru_cb",
+  "description": "Step 6 sensitivity grid — VRU-CB cluster. Same structure as step6_ccr: three error types at three magnitudes, outlier off (p=0, 5 seeds) and forced on (p=1, 20 seeds). 920 runs total.",
+  "scenarios": ["ncap_cbna_50", "ncap_cbnao_50", "ncap_cbfa_50", "ncap_cbla_50"],
+  "groups": [
+    {
+      "name": "baseline",
+      "set": {"errors": []},
+      "seeds": [1]
+    },
+    {
+      "name": "range_off",
+      "set": {"errors": [{"type": "ou", "noise": "mixture", "p_outlier": 0}]},
+      "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+      "seeds": {"first": 1, "count": 5}
+    },
+    {
+      "name": "range_on",
+      "set": {"errors": [{"type": "ou", "noise": "mixture", "p_outlier": 1}]},
+      "vary": {"errors.ou.mae_pct": [5.0, 10.0, 20.0]},
+      "seeds": {"first": 1, "count": 20}
+    },
+    {
+      "name": "lateral_off",
+      "set": {"errors": [{"type": "lateral", "noise": "mixture", "p_outlier": 0}]},
+      "vary": {"errors.lateral.sigma_theta_deg": [1.0, 2.0, 4.0]},
+      "seeds": {"first": 1, "count": 5}
+    },
+    {
+      "name": "lateral_on",
+      "set": {"errors": [{"type": "lateral", "noise": "mixture", "p_outlier": 1}]},
+      "vary": {"errors.lateral.sigma_theta_deg": [1.0, 2.0, 4.0]},
+      "seeds": {"first": 1, "count": 20}
+    },
+    {
+      "name": "velocity_off_low",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 0.25, "sigma_tangential_mps": 1.0, "noise": "mixture", "p_outlier": 0}]},
+      "seeds": {"first": 1, "count": 5}
+    },
+    {
+      "name": "velocity_off_mid",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 0.5, "sigma_tangential_mps": 2.0, "noise": "mixture", "p_outlier": 0}]},
+      "seeds": {"first": 1, "count": 5}
+    },
+    {
+      "name": "velocity_off_high",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 1.0, "sigma_tangential_mps": 4.0, "noise": "mixture", "p_outlier": 0}]},
+      "seeds": {"first": 1, "count": 5}
+    },
+    {
+      "name": "velocity_on_low",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 0.25, "sigma_tangential_mps": 1.0, "noise": "mixture", "p_outlier": 1}]},
+      "seeds": {"first": 1, "count": 20}
+    },
+    {
+      "name": "velocity_on_mid",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 0.5, "sigma_tangential_mps": 2.0, "noise": "mixture", "p_outlier": 1}]},
+      "seeds": {"first": 1, "count": 20}
+    },
+    {
+      "name": "velocity_on_high",
+      "set": {"errors": [{"type": "velocity", "sigma_radial_mps": 1.0, "sigma_tangential_mps": 4.0, "noise": "mixture", "p_outlier": 1}]},
+      "seeds": {"first": 1, "count": 20}
+    }
+  ]
+}

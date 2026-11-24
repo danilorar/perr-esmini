@@ -11,8 +11,9 @@ import unittest
 from pipeline import errors, scenarios
 from pipeline.config import validate
 from pipeline.errors.frames import hold_per_step, iid_frames, markov_frames, markov_parameters, missed_steps, wrong_class_steps
-from pipeline.errors import fitted
+from pipeline.errors import fitted, lateral, velocity
 from pipeline.errors.ou import SIGMA_PER_MAE, CorrelatedRangeNoise, unit_samples
+from pipeline.errors.outliers import TargetOutliers
 
 TARGET = {'id': 1, 'name': 'object_2'}
 DT = 0.01
@@ -149,8 +150,8 @@ class OuTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_registry_finds_every_plugin_and_no_helper(self):
-        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'identification', 'ou', 'size',
-                                                         'template'})
+        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'identification', 'lateral', 'ou',
+                                                         'size', 'template', 'velocity'})
 
     def test_defaults_are_filled_in(self):
         entries = config([{'type': 'detection'}, {'type': 'size', 'name': 'big', 'scale': 2}])['errors']
@@ -423,6 +424,196 @@ class FittedTests(unittest.TestCase):
                     {'offset': 'target'}, {'offset': 'per_frame'}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 config([{**self.entry(), **bad}])
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by LateralErrorTests, VelocityErrorTests, OutlierTests
+# ---------------------------------------------------------------------------
+
+def _run(steps=20, seed=0, label='test', dt_s=0.1):
+    """Minimal run namespace for plugin construction (fixed seed → deterministic)."""
+    return SimpleNamespace(
+        seed=seed, label=label, dt_s=dt_s, steps=steps,
+        targets=[{'id': 1, 'name': 'obj1'}],
+    )
+
+
+def _tgt(x, y, vx=0.0, vy=0.0):
+    """Minimal target dict for perceive() calls; ego is assumed at (0, 0)."""
+    r = math.hypot(x, y)
+    return {
+        'id': 1, 'name': 'obj1',
+        'true': {'x': x, 'y': y, 'vx': vx, 'vy': vy},
+        'true_range': r,
+        'x': x, 'y': y, 'vx': vx, 'vy': vy,
+        'speed': math.hypot(vx, vy),
+        'log': {},
+    }
+
+
+_EGO = {'x': 0.0, 'y': 0.0}
+
+
+# ---------------------------------------------------------------------------
+# Lateral plugin tests
+# ---------------------------------------------------------------------------
+
+class LateralErrorTests(unittest.TestCase):
+    def _plugin(self, steps=20, **kw):
+        cfg = {'sigma_theta_deg': 0.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 0.0, 'noise': 'gaussian'}
+        cfg.update(kw)
+        return lateral.Error(cfg, _run(steps=steps))
+
+    def test_L1_zero_sigma_no_bias_unchanged(self):
+        """L1: zero sigma and bias leaves x, y unchanged within 1e-9 m."""
+        plugin = self._plugin()
+        tgt = _tgt(20.0, 1.5)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['x'], 20.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['y'], 1.5, delta=1e-9)
+
+    def test_L2_nonzero_sigma_range_unchanged(self):
+        """L2: nonzero sigma changes position; range preserved to 1e-6 m (exact rotation).
+
+        The plugin rotates the ego→target bearing by theta_total; the new position
+        lies exactly on the circle of radius r centred at ego, so range is preserved
+        to floating-point precision.
+        """
+        true_range = math.hypot(20.0, 1.5)
+        plugin = self._plugin(sigma_theta_deg=2.0)
+        tgt = _tgt(20.0, 1.5)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertTrue(abs(tgt['x'] - 20.0) > 1e-9 or abs(tgt['y'] - 1.5) > 1e-9,
+                        'sigma=2 deg should shift position')
+        perceived_range = math.hypot(tgt['x'] - _EGO['x'], tgt['y'] - _EGO['y'])
+        self.assertAlmostEqual(perceived_range, true_range, delta=1e-6)
+
+    def test_L3_bias_shifts_consistently(self):
+        """L3: bias_theta=1 deg produces the exact-rotation position on every step.
+
+        Target along x-axis (phi=0).  After rotation by 1°:
+            x' = r*cos(1°),  y' = r*sin(1°).
+        """
+        plugin = self._plugin(bias_theta_deg=1.0, sigma_theta_deg=0.0)
+        r = 20.0
+        x0, y0 = r, 0.0        # target along x-axis from ego at origin
+        bias_rad = math.radians(1.0)
+        expected_x = r * math.cos(bias_rad)
+        expected_y = r * math.sin(bias_rad)
+        for step in range(5):
+            tgt = _tgt(x0, y0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            self.assertAlmostEqual(tgt['x'], expected_x, delta=1e-9,
+                                   msg=f'x must equal r*cos(1°) (step {step})')
+            self.assertAlmostEqual(tgt['y'], expected_y, delta=1e-9,
+                                   msg=f'y must equal r*sin(1°) (step {step})')
+
+
+# ---------------------------------------------------------------------------
+# Velocity plugin tests
+# ---------------------------------------------------------------------------
+
+class VelocityErrorTests(unittest.TestCase):
+    def _plugin(self, steps=20, dt_s=0.1, **kw):
+        cfg = {
+            'sigma_radial_mps': 0.0, 'sigma_tangential_mps': 0.0,
+            'bias_radial_mps': 0.0, 'correlation_time_s': 1.0,
+            'p_outlier': 0.0, 'noise': 'gaussian',
+        }
+        cfg.update(kw)
+        return velocity.Error(cfg, _run(steps=steps, dt_s=dt_s))
+
+    def test_V1_zero_sigma_zero_bias_unchanged(self):
+        """V1: zero sigma and bias leaves vx, vy, speed unchanged."""
+        plugin = self._plugin()
+        tgt = _tgt(20.0, 1.0, vx=5.0, vy=2.0)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['vx'], 5.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['vy'], 2.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['speed'], math.hypot(5.0, 2.0), delta=1e-9)
+
+    def test_V2_ou_lag1_autocorrelation(self):
+        """V2: radial OU lag-1 acf ≈ exp(-0.1/1.0) ≈ 0.905; must lie in [0.80, 0.98].
+
+        The sample ACF of an AR(1) process has SD ≈ sqrt((1+ρ²)/n).  With ρ≈0.905
+        and n=100, SD ≈ 0.14 — too noisy for the [0.80, 0.98] window.  Using
+        n=500 brings SD ≈ 0.06, so the window is about ±1.7 SD: reliable.
+        """
+        steps = 500
+        plugin = self._plugin(steps=steps, dt_s=0.1,
+                              sigma_radial_mps=1.0, correlation_time_s=1.0)
+        vr_errors = []
+        for step in range(steps):
+            tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            # target along x-axis → ur=(1,0) → perceived vx = vr_obs; true vr = 0
+            vr_errors.append(tgt['vx'])
+
+        mean_e = sum(vr_errors) / len(vr_errors)
+        num = sum((vr_errors[i] - mean_e) * (vr_errors[i + 1] - mean_e)
+                  for i in range(steps - 1))
+        den = sum((e - mean_e) ** 2 for e in vr_errors)
+        acf1 = num / den
+        self.assertGreater(acf1, 0.80, msg=f'lag-1 acf = {acf1:.3f}; expected ≈ 0.905')
+        self.assertLess(acf1, 0.98, msg=f'lag-1 acf = {acf1:.3f}; expected ≈ 0.905')
+
+    def test_V3_bias_decreases_closing_speed(self):
+        """V3: bias_radial=2 lowers perceived closing speed by 2 m/s (positive = less threatening).
+
+        Sign convention: positive bias_radial_mps → vr_obs = vr_true + bias
+        → target appears to close slower → controller brakes later.
+        """
+        plugin = self._plugin(bias_radial_mps=2.0)
+        # Target approaching head-on; ur=(1,0) → vr = tgt['vx']
+        tgt = _tgt(20.0, 0.0, vx=-15.0, vy=0.0)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        true_closing_speed = 15.0            # = -vr_true = -(-15)
+        perceived_closing_speed = -tgt['vx']  # = -vr_obs = -(vr_true + 2) = 15 - 2
+        self.assertAlmostEqual(perceived_closing_speed, true_closing_speed - 2.0,
+                               delta=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Outlier / mixture tests
+# ---------------------------------------------------------------------------
+
+class OutlierTests(unittest.TestCase):
+    def test_O1_p_outlier_1_all_nonzero_constant(self):
+        """O1: p_outlier=1 gives nonzero, constant outlier_m across 10 steps."""
+        cfg = {'sigma_theta_deg': 1.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 1.0, 'noise': 'mixture'}
+        plugin = lateral.Error(cfg, _run(steps=10))
+        outlier_ms = []
+        for step in range(10):
+            tgt = _tgt(20.0, 0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            outlier_ms.append(tgt['log']['outlier_m'])
+        self.assertNotAlmostEqual(outlier_ms[0], 0.0, places=9,
+                                  msg='p_outlier=1 should give non-zero bias')
+        for i in range(1, 10):
+            self.assertAlmostEqual(outlier_ms[i], outlier_ms[0], delta=1e-12,
+                                   msg=f'outlier_m must be constant (step {i})')
+
+    def test_O2_p_outlier_0_always_zero(self):
+        """O2: p_outlier=0 gives outlier_m == 0.0 on every step."""
+        cfg = {'sigma_theta_deg': 1.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 0.0, 'noise': 'mixture'}
+        plugin = lateral.Error(cfg, _run(steps=10))
+        for step in range(10):
+            tgt = _tgt(20.0, 0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            self.assertEqual(tgt['log']['outlier_m'], 0.0,
+                             msg=f'step {step}')
+
+    def test_O3_p_outlier_002_fraction(self):
+        """O3: p_outlier=0.02 across 10,000 targets gives outlier count in [100, 300]."""
+        ol = TargetOutliers('o3_seed', p_outlier=0.02, sigma_outlier=1.0)
+        count = sum(1 for tid in range(10_000) if ol.draw(tid) != 0.0)
+        self.assertGreaterEqual(count, 100,
+                                msg=f'too few outliers: {count} (expected ≈ 200)')
+        self.assertLessEqual(count, 300,
+                             msg=f'too many outliers: {count} (expected ≈ 200)')
 
 
 if __name__ == '__main__':
