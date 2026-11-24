@@ -20,3 +20,8 @@ runtime/
 output/
 # Scenarios imported with import-tasc stay local (teacher data)
 pipeline/scenarios/local/
+
+# Archive 
+archive/**
+
+

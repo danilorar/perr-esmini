@@ -53,6 +53,11 @@ def command_import_tasc(args):
     print(f'{len(done)} of {len(rows)} imported into {scenarios.LOCAL}; report: import_report.csv there.')
 
 
+def command_import_ncap(_):
+    from .scenarios.ncap import import_ncap
+    import_ncap()
+
+
 def command_fit_kradar(args):
     from .fit_kradar import compare_with_shared, run
     summary = run(args.data, args.meta, args.detectors, args.output or OUTPUT / 'kradar' / 'fit',
@@ -95,6 +100,8 @@ def main():
     grid.set_defaults(function=command_grid)
 
     commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
+
+    commands.add_parser('import-ncap', help='import NCAP CA-FC 2026 single-execution scenarios into local/').set_defaults(function=command_import_ncap)
 
     tasc = commands.add_parser('import-tasc', help='convert TASC case folders into local scenarios (not in Git)')
     tasc.add_argument('folder', help='folder with "Cut-in", "Rear-end car-car" and/or "Rear-end car-cyclist"')

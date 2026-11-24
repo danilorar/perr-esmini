@@ -59,7 +59,8 @@ PUBLIC_EDITS = [
 
 
 def controller_edits(selected):
-    """Registration edits for the selected controllers."""
+    """Registration edits for the selected controllers. Native controllers are already registered in esmini."""
+    selected = [c for c in selected if not c.native]
     if not selected:
         return []
     includes = ''.join(f'\n#include "{c.header}"' for c in selected)
@@ -159,9 +160,10 @@ def patch_engine(selected):
 
 
 def install_controllers(selected):
-    """Copy sources (OS-level copy, contents untouched); remove copies of controllers no longer used."""
+    """Copy sources (OS-level copy, contents untouched); remove copies of controllers no longer used.
+    Native controllers are already built into esmini; nothing to copy."""
     destination = ENGINE / CONTROLLER_DIR
-    wanted = {name for c in selected for name in c.sources}
+    wanted = {name for c in selected if not c.native for name in c.sources}
     previous = []
     if BUILD_INFO.is_file():
         previous = json.loads(BUILD_INFO.read_text(encoding='utf-8')).get('installed_sources', [])
@@ -169,6 +171,8 @@ def install_controllers(selected):
         if name not in wanted and (destination / name).is_file():
             (destination / name).unlink()
     for controller in selected:
+        if controller.native:
+            continue
         for name in controller.sources:
             shutil.copy2(controller.folder / name, destination / name)
     return sorted(wanted)
@@ -260,7 +264,8 @@ def write_build_info(selected, installed, *, complete):
 
 
 def check_build(controller):
-    """Refuse to run a stale build. Compares file size and time for controllers, never their contents."""
+    """Refuse to run a stale build. Compares file size and time for controllers, never their contents.
+    For native controllers, only the esmini binary, build completion and bridge hash are checked."""
     if not ESMINI.is_file() or not BUILD_INFO.is_file():
         raise RuntimeError('esmini is not built. Run: python -m pipeline setup')
     info = json.loads(BUILD_INFO.read_text(encoding='utf-8'))
@@ -268,6 +273,7 @@ def check_build(controller):
         raise RuntimeError('The last esmini build did not finish. Run: python -m pipeline setup')
     if info.get('bridge_sha256') != sha256(BRIDGE_HEADER):
         raise RuntimeError('PerceptionBridge.hpp changed. Run: python -m pipeline setup')
-    if info['controllers'].get(controller.key) != controller.source_metadata():
-        raise RuntimeError(f'Controller {controller.key!r} is new or changed. Run: python -m pipeline setup')
+    if not controller.native:
+        if info['controllers'].get(controller.key) != controller.source_metadata():
+            raise RuntimeError(f'Controller {controller.key!r} is new or changed. Run: python -m pipeline setup')
     return info
