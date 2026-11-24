@@ -574,22 +574,40 @@ class VelocityErrorTests(unittest.TestCase):
         self.assertAlmostEqual(perceived_closing_speed, true_closing_speed - 2.0,
                                delta=1e-6)
 
-    def test_V4_negative_bias_flips_heading_increases_perceived_closing(self):
-        """V4: stationary target, bias_radial = −2 m/s → target appears to approach ego.
+    def test_V4_stationary_target_negative_bias_heading_from_velocity_vector(self):
+        """V4: stationary target, bias_radial = −2 m/s → v_obs = (−2, 0) → heading = π, speed = 2.
 
-        vr_true = 0, vr_obs = −2 (negative) → heading flipped by π.
-        HiDrive sees: speed 2, heading π → closing = ego_speed + 2.
-        Test: heading == π, vx == −2, speed == 2.
+        vr_true = 0, vr_obs = −2.  v_obs = vr_obs·u_r = (−2, 0).
+        heading = atan2(0, −2) = π.  HiDrive: closing = ego_speed − 2×cos(π) = ego_speed + 2.
         """
         plugin = self._plugin(bias_radial_mps=-2.0)
-        tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0, heading=0.0)   # stationary, directly ahead
+        tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0, heading=0.0)
         plugin.perceive(0, 0.0, _EGO, [tgt])
         self.assertAlmostEqual(tgt['heading'], math.pi, delta=1e-9,
-                               msg='heading should be flipped by π when vr_obs < 0')
+                               msg='heading = atan2(0, -2) = π')
         self.assertAlmostEqual(tgt['vx'], -2.0, delta=1e-9,
-                               msg='vx = vr_obs × ur_x = −2 × 1 = −2')
+                               msg='vx = vr_obs × ur_x = -2')
         self.assertAlmostEqual(tgt['speed'], 2.0, delta=1e-9,
-                               msg='speed = |vr_obs| = 2')
+                               msg='speed = |v_obs| = 2')
+
+    def test_V5_crossing_target_tiny_radial_error_heading_stable(self):
+        """V5: cyclist at (20, 0) moving +4 m/s in y, e_r = −0.1.
+
+        v_obs = (−0.1, 4.0) → heading = atan2(4.0, −0.1) ≈ +91.4°, speed ≈ 4.001.
+        Old heading-flip code would have set heading to −90° (crossing direction reversed).
+        Vector approach keeps heading near +90°.
+        """
+        plugin = self._plugin(bias_radial_mps=-0.1)
+        tgt = _tgt(20.0, 0.0, vx=0.0, vy=4.0, heading=math.pi / 2)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        expected_vx = -0.1  # vr_obs × ur_x = -0.1 × 1
+        expected_vy = 4.0   # vt_obs × ut_y = 4 × 1
+        self.assertAlmostEqual(tgt['vx'], expected_vx, delta=1e-9)
+        self.assertAlmostEqual(tgt['vy'], expected_vy, delta=1e-9)
+        self.assertAlmostEqual(tgt['speed'], math.hypot(-0.1, 4.0), delta=1e-9)
+        # heading ≈ 91.4°, well within 10° of +90°; definitely not -90° (old flip behaviour)
+        self.assertAlmostEqual(tgt['heading'], math.atan2(4.0, -0.1), delta=1e-9,
+                               msg='heading must come from atan2(vy_obs, vx_obs)')
 
 
 # ---------------------------------------------------------------------------

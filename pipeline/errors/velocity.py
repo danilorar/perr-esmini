@@ -123,13 +123,12 @@ class Error:
             target['vx'] = vr_obs * ur_x + vt_obs * ut_x
             target['vy'] = vr_obs * ur_y + vt_obs * ut_y
             target['speed'] = math.hypot(target['vx'], target['vy'])
-            # HiDrive computes closing = ego_speed − speed × cos(heading_diff).
-            # When vr_obs < 0 the target appears to approach; flip its heading by π so
-            # cos(heading_diff) = −1 and closing = ego_speed + |vr_obs|.
-            # Positive vr_obs (target appears to move away): heading unchanged, closing = ego_speed − |vr_obs|.
-            if vr_obs < 0:
-                h0 = target.get('heading', true.get('heading', 0.0))
-                target['heading'] = (h0 + math.pi) % (2 * math.pi)
+            # Derive heading from the observed velocity vector so HiDrive computes
+            # closing = ego_speed − speed × cos(heading_diff) correctly for all targets.
+            # For a crossing cyclist (vt_obs >> vr_obs), heading stays near ±90°; it is
+            # not flipped to the opposite crossing direction by a tiny radial error.
+            if target['speed'] > 1e-6:
+                target['heading'] = math.atan2(target['vy'], target['vx'])
 
             target['log'].update(
                 vr_error_mps=vr_obs - vr_true,
