@@ -74,13 +74,11 @@ class Error:
             self.ou_t[target['name']] = _ou_samples(seed_t, tau, run.dt_s, run.steps)
 
         # Mixture: persistent per-target outlier biases (whole track).
-        # sigma_outlier = 5 * per-step driving noise = 5 * sigma_ou * sqrt(1 - exp(-2*dt/tau)).
-        # This keeps the outlier at ~1x the stationary sigma (for tau=0.5s, dt=0.01s: factor≈0.198).
+        # sigma_outlier = 5 * sigma (stationary) → mean|outlier| ≈ 4×sigma, same rule as range/lateral.
         if self.noise == 'mixture':
             seed_string = f'{run.seed}:{run.label}'
-            spread = math.sqrt(1.0 - math.exp(-2.0 * run.dt_s / tau))
-            sigma_outlier_r = 5.0 * self.sigma_r * spread
-            sigma_outlier_t = 5.0 * self.sigma_t * spread
+            sigma_outlier_r = 5.0 * self.sigma_r
+            sigma_outlier_t = 5.0 * self.sigma_t
             ol_r = TargetOutliers(seed_string + ':radial', settings['p_outlier'])
             ol_t = TargetOutliers(seed_string + ':tangential', settings['p_outlier'])
             self._outlier_r = {target['id']: ol_r.draw(target['id']) * sigma_outlier_r

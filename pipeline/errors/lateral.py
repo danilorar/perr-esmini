@@ -23,12 +23,14 @@ from pipeline.errors.outliers import TargetOutliers
 SETTINGS = {
     'sigma_theta_deg': 1.0,
     'bias_theta_deg': 0.0,
+    'bias_m': 0.0,
     'p_outlier': 0.02,
     'noise': 'gaussian',
 }
 RANGES = {
     'sigma_theta_deg': (0.0, 45.0),
     'bias_theta_deg': (-45.0, 45.0),
+    'bias_m': (-20.0, 20.0),
     'p_outlier': (0.0, 1.0),
 }
 CHOICES = {'noise': ('gaussian', 'mixture')}
@@ -40,6 +42,7 @@ class Error:
         self.settings = settings
         self.sigma_rad = math.radians(settings['sigma_theta_deg'])
         self.bias_rad = math.radians(settings['bias_theta_deg'])
+        self.bias_m = settings.get('bias_m', 0.0)
         self.noise_mode = settings['noise']
 
         # Pre-draw per-frame Gaussian samples for each target.
@@ -89,6 +92,15 @@ class Error:
             phi_new = phi + theta_total
             target['x'] = ego_x + r * math.cos(phi_new)
             target['y'] = ego_y + r * math.sin(phi_new)
+
+            # Fixed-metre lateral offset (bias_m): shifts target by a constant distance
+            # perpendicular to the line of sight, in the "away from path" direction.
+            # Equivalent angle grows at close range, so it is a pessimistic test near impact.
+            if self.bias_m:
+                perp_x = -math.sin(phi_new) * away_sign
+                perp_y = math.cos(phi_new) * away_sign
+                target['x'] += self.bias_m * perp_x
+                target['y'] += self.bias_m * perp_y
             delta_x = target['x'] - true_x
             delta_y = target['y'] - true_y
 
@@ -105,6 +117,7 @@ class Error:
         return {
             'sigma_theta_deg': self.settings['sigma_theta_deg'],
             'bias_theta_deg': self.settings['bias_theta_deg'],
+            'bias_m': self.settings.get('bias_m', 0.0),
             'p_outlier': self.settings['p_outlier'],
             'noise': self.settings['noise'],
             'calibration': 'Assumed values; a sensitivity model, not measured sensor risk.',
