@@ -608,7 +608,7 @@ class OutlierTests(unittest.TestCase):
 
     def test_O3_p_outlier_002_fraction(self):
         """O3: p_outlier=0.02 across 10,000 targets gives outlier count in [100, 300]."""
-        ol = TargetOutliers('o3_seed', p_outlier=0.02, sigma_outlier=1.0)
+        ol = TargetOutliers('o3_seed', p_outlier=0.02)
         count = sum(1 for tid in range(10_000) if ol.draw(tid) != 0.0)
         self.assertGreaterEqual(count, 100,
                                 msg=f'too few outliers: {count} (expected ≈ 200)')

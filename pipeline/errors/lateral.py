@@ -51,11 +51,12 @@ class Error:
             rng = random.Random(f'{seed_base}:{tid}:lateral')
             self._samples[tid] = [rng.gauss(0.0, self.sigma_rad) for _ in range(run.steps)]
 
-        # Mixture mode: persistent outlier bias per target (in radians)
+        # Mixture mode: persistent outlier bias per target (in radians).
+        # sigma = 5 * sigma_theta_deg in angle space — range-independent, as Danilo confirmed.
         if self.noise_mode == 'mixture':
             sigma_outlier_deg = 5.0 * settings['sigma_theta_deg']
-            ol = TargetOutliers(seed_base, settings['p_outlier'], sigma_outlier_deg)
-            self._outlier_rad = {target['id']: math.radians(ol.draw(target['id']))
+            ol = TargetOutliers(seed_base, settings['p_outlier'])
+            self._outlier_rad = {target['id']: math.radians(ol.draw(target['id']) * sigma_outlier_deg)
                                  for target in run.targets}
         else:
             self._outlier_rad = {}

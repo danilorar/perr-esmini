@@ -73,13 +73,20 @@ class Error:
             self.ou_r[target['name']] = _ou_samples(seed_r, tau, run.dt_s, run.steps)
             self.ou_t[target['name']] = _ou_samples(seed_t, tau, run.dt_s, run.steps)
 
-        # Mixture: pre-draw per-target persistent outlier biases (whole track).
+        # Mixture: persistent per-target outlier biases (whole track).
+        # sigma_outlier = 5 * per-step driving noise = 5 * sigma_ou * sqrt(1 - exp(-2*dt/tau)).
+        # This keeps the outlier at ~1x the stationary sigma (for tau=0.5s, dt=0.01s: factor≈0.198).
         if self.noise == 'mixture':
             seed_string = f'{run.seed}:{run.label}'
-            self._ol_r = TargetOutliers(seed_string + ':radial', settings['p_outlier'],
-                                        5.0 * self.sigma_r)
-            self._ol_t = TargetOutliers(seed_string + ':tangential', settings['p_outlier'],
-                                        5.0 * self.sigma_t)
+            spread = math.sqrt(1.0 - math.exp(-2.0 * run.dt_s / tau))
+            sigma_outlier_r = 5.0 * self.sigma_r * spread
+            sigma_outlier_t = 5.0 * self.sigma_t * spread
+            ol_r = TargetOutliers(seed_string + ':radial', settings['p_outlier'])
+            ol_t = TargetOutliers(seed_string + ':tangential', settings['p_outlier'])
+            self._outlier_r = {target['id']: ol_r.draw(target['id']) * sigma_outlier_r
+                               for target in run.targets}
+            self._outlier_t = {target['id']: ol_t.draw(target['id']) * sigma_outlier_t
+                               for target in run.targets}
 
     def perceive(self, step, t, ego, targets):
         for target in targets:
@@ -102,8 +109,8 @@ class Error:
 
             # Outlier bias (zero unless noise='mixture').
             if self.noise == 'mixture':
-                outlier_r = self._ol_r.draw(target['id'])
-                outlier_t = self._ol_t.draw(target['id'])
+                outlier_r = self._outlier_r.get(target['id'], 0.0)
+                outlier_t = self._outlier_t.get(target['id'], 0.0)
             else:
                 outlier_r = 0.0
                 outlier_t = 0.0
