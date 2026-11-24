@@ -68,7 +68,7 @@ def command_fit_kradar(args):
 
 def command_analyze_grid(args):
     from .analyze_grid import analyze
-    analyze(args.grid, csv_out=args.csv)
+    analyze(args.grid, csv_out=args.csv, no_split=args.no_split)
 
 
 def command_replay(args):
@@ -126,6 +126,7 @@ def main():
     analyze = commands.add_parser('analyze-grid', help='summarise a grid: gap, brake delay, ΔTTC, crash rate per group')
     analyze.add_argument('grid', help='grid output folder (contains runs/)')
     analyze.add_argument('--csv', help='write table to this CSV file')
+    analyze.add_argument('--no-split', action='store_true', help='pool velocity_on + and − instead of splitting by outlier sign')
     analyze.set_defaults(function=command_analyze_grid)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')

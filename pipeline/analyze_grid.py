@@ -93,12 +93,11 @@ def _ttc_from_steps(run_dir, t):
     else:
         true_closing = ego_speed  # stationary target approximation
 
-    # Corrected perceived closing: ego_speed − |vr_obs|.
-    # (longitudinal_risk uses target.speed × cos(heading_diff); speed = |vr_obs|, cos ≈ 1 collinear)
-    vr_true_approx = ego_speed - true_closing
-    vr_obs = vr_true_approx + (vr_error or 0.0)
-    p_close = ego_speed - abs(vr_obs)
-    # If perceived closing ≤ 0 the error makes the target appear to recede: TTC undefined.
+    # After velocity.py heading-flip fix: closing_perceived = closing_true − vr_error.
+    # Positive vr_error → target appears slower → later braking.
+    # Negative vr_error → heading flipped → target appears to approach → earlier braking.
+    p_close = true_closing - (vr_error or 0.0)
+    # If ≤ 0 the error makes the target appear to recede: TTC undefined.
     if p_close <= 0:
         return ttc_true, None, None, outlier_r
     perceived_closing = max(p_close, 1e-6)
@@ -186,18 +185,19 @@ def _fmt(v, decimals=2):
     return '—' if v is None else f'{v:.{decimals}f}'
 
 
-def analyze(grid_dir, csv_out=None):
+def analyze(grid_dir, csv_out=None, no_split=False):
     print('Loading runs (recomputing ΔTTC from step files)...')
     rows = load_runs(grid_dir, recompute_ttc=True)
     if not rows:
         sys.exit('No completed runs found.')
 
-    # Baseline first_brake and first_emergency_brake per scenario.
-    baseline_brake, baseline_emgcy = {}, {}
+    # Baseline metrics per scenario.
+    baseline_brake, baseline_emgcy, baseline_gap = {}, {}, {}
     for r in rows:
         if r['group'] == 'baseline':
             baseline_brake[r['scenario']] = r['first_brake_time_s']
             baseline_emgcy[r['scenario']] = r['first_emergency_brake_time_s']
+            baseline_gap[r['scenario']] = r['minimum_gap_m']
 
     for r in rows:
         base_b = baseline_brake.get(r['scenario'])
@@ -206,11 +206,12 @@ def analyze(grid_dir, csv_out=None):
         fe = r['first_emergency_brake_time_s']
         r['brake_delay_s'] = (fb - base_b) if (fb is not None and base_b is not None) else None
         r['emgcy_delay_s'] = (fe - base_e) if (fe is not None and base_e is not None) else None
+        r['baseline_gap_m'] = baseline_gap.get(r['scenario'])
 
-    # For velocity_on groups: append + or − based on outlier sign.
+    # For velocity_on groups: append + or − based on outlier sign (unless suppressed).
     for r in rows:
         g = r['group']
-        if 'velocity_on' in g:
+        if not no_split and 'velocity_on' in g:
             outlier = r['brake_outlier_r_mps']
             if outlier is not None:
                 g = g + ('+' if outlier >= 0 else '-')
@@ -223,10 +224,11 @@ def analyze(grid_dir, csv_out=None):
         seen.setdefault(key, []).append(r)
 
     # Print first brake table.
-    col_w = [28, 30, 5, 7, 7, 7, 7]
-    hdr = ['Scenario', 'Group', 'N', 'Crash%', 'MinGap', 'Delay', 'ΔTTC@1st']
+    col_w = [28, 30, 5, 7, 7, 7, 7, 7]
+    hdr = ['Scenario', 'Group', 'N', 'Crash%', 'BasGap', 'MinGap', 'Delay', 'ΔTTC@1st']
     _print_table(seen, hdr, col_w,
-                 lambda rs: (_mean([r['minimum_gap_m'] for r in rs]),
+                 lambda rs: (rs[0]['baseline_gap_m'],
+                             _mean([r['minimum_gap_m'] for r in rs]),
                              _mean([r['brake_delay_s'] for r in rs]),
                              _mean([r['brake_delta_ttc_s'] for r in rs])))
 
@@ -234,10 +236,11 @@ def analyze(grid_dir, csv_out=None):
     seen_emgcy = {k: v for k, v in seen.items() if any(r['emgcy_delay_s'] is not None for r in v)}
     if seen_emgcy:
         print('\n--- Emergency brake (< −4 m/s²) ---')
-        hdr2 = ['Scenario', 'Group', 'N_emgcy', 'Crash%', 'MinGap', 'EmgcyDelay', 'ΔTTC@emgcy']
-        col_w2 = [28, 30, 8, 7, 7, 10, 10]
+        hdr2 = ['Scenario', 'Group', 'N_emgcy', 'Crash%', 'BasGap', 'MinGap', 'EmgcyDelay', 'ΔTTC@emgcy']
+        col_w2 = [28, 30, 8, 7, 7, 7, 10, 10]
         _print_table(seen_emgcy, hdr2, col_w2,
-                     lambda rs: (_mean([r['minimum_gap_m'] for r in rs]),
+                     lambda rs: (rs[0]['baseline_gap_m'],
+                                 _mean([r['minimum_gap_m'] for r in rs]),
                                  _mean([r['emgcy_delay_s'] for r in rs if r['emgcy_delay_s'] is not None]),
                                  _mean([r['emgcy_delta_ttc_s'] for r in rs])))
 
@@ -276,7 +279,7 @@ def _print_table(seen, header, col_w, row_fn):
             last_scenario = scenario
         n = len(group_rows)
         crash_pct = 100.0 * sum(r['collision'] for r in group_rows) / n
-        v1, v2, v3 = row_fn(group_rows)
-        cells = [scenario, group, str(n), f'{crash_pct:.0f}%', _fmt(v1), _fmt(v2), _fmt(v3)]
+        values = row_fn(group_rows)
+        cells = [scenario, group, str(n), f'{crash_pct:.0f}%'] + [_fmt(v) for v in values]
         print('  '.join(f'{c:{w}}' for c, w in zip(cells, col_w)))
     print()

@@ -127,12 +127,11 @@ def _perceived_ttc(record, true_gap, true_closing, ego_speed):
     outlier_r = float(record.get('velocity.outlier_r_mps', 0.0))
     # Perceived gap: adjust range error proportionally.
     perceived_gap = max(raw_range - (true_range_r - true_gap), 0.0)
-    # vr_true ≈ ego_speed − closing_true (collinear approximation).
-    vr_true_approx = ego_speed - true_closing
-    vr_obs = vr_true_approx + vr_error
-    # closing_perceived = ego_speed − |vr_obs| (speed magnitude × cos(0) for collinear target).
-    # If ≤ 0 the error makes the target appear to recede: perceived TTC undefined.
-    p_close = ego_speed - abs(vr_obs)
+    # After velocity.py heading-flip fix: closing_perceived = closing_true − vr_error.
+    # Positive vr_error → target appears to close slower (later braking, positive ΔTTC).
+    # Negative vr_error → heading flipped → target appears to approach (earlier braking, negative ΔTTC).
+    # When vr_error ≥ closing_true the target appears to recede: perceived TTC undefined.
+    p_close = true_closing - vr_error
     if p_close <= 0:
         return None, None, outlier_r
     perceived_closing = max(p_close, 1e-6)

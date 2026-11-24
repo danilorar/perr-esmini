@@ -438,14 +438,15 @@ def _run(steps=20, seed=0, label='test', dt_s=0.1):
     )
 
 
-def _tgt(x, y, vx=0.0, vy=0.0):
+def _tgt(x, y, vx=0.0, vy=0.0, heading=0.0):
     """Minimal target dict for perceive() calls; ego is assumed at (0, 0)."""
     r = math.hypot(x, y)
     return {
         'id': 1, 'name': 'obj1',
-        'true': {'x': x, 'y': y, 'vx': vx, 'vy': vy},
+        'true': {'x': x, 'y': y, 'vx': vx, 'vy': vy, 'heading': heading},
         'true_range': r,
         'x': x, 'y': y, 'vx': vx, 'vy': vy,
+        'heading': heading,
         'speed': math.hypot(vx, vy),
         'log': {},
     }
@@ -572,6 +573,23 @@ class VelocityErrorTests(unittest.TestCase):
         perceived_closing_speed = -tgt['vx']  # = -vr_obs = -(vr_true + 2) = 15 - 2
         self.assertAlmostEqual(perceived_closing_speed, true_closing_speed - 2.0,
                                delta=1e-6)
+
+    def test_V4_negative_bias_flips_heading_increases_perceived_closing(self):
+        """V4: stationary target, bias_radial = −2 m/s → target appears to approach ego.
+
+        vr_true = 0, vr_obs = −2 (negative) → heading flipped by π.
+        HiDrive sees: speed 2, heading π → closing = ego_speed + 2.
+        Test: heading == π, vx == −2, speed == 2.
+        """
+        plugin = self._plugin(bias_radial_mps=-2.0)
+        tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0, heading=0.0)   # stationary, directly ahead
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['heading'], math.pi, delta=1e-9,
+                               msg='heading should be flipped by π when vr_obs < 0')
+        self.assertAlmostEqual(tgt['vx'], -2.0, delta=1e-9,
+                               msg='vx = vr_obs × ur_x = −2 × 1 = −2')
+        self.assertAlmostEqual(tgt['speed'], 2.0, delta=1e-9,
+                               msg='speed = |vr_obs| = 2')
 
 
 # ---------------------------------------------------------------------------
