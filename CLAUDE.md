@@ -26,7 +26,7 @@ If in doubt about the architecture of the error generator, read `docs/figures/ar
 | `pipeline/scenarios/imported/` | Imported, pipeline-ready versions of all scenarios | Yes |
 | `pipeline/scenarios/imported/scenarios.json` | Registry — the single source of truth for what the pipeline can run | Yes |
 
-**The pipeline never reads `data/` directly.** See `data/README.md` for a full explanation. It reads `pipeline/scenarios/imported/` and the registry.
+**The pipeline never reads `data/` directly.** See `data/README.md` for a full explanation and `pipeline/scenarios/imported/README.md` for what the working set contains. It reads `pipeline/scenarios/imported/` and the registry.
 Raw TASC files in `data/Rear-end*/` are only used by `python -m pipeline tasc` to (re-)import scenarios;
 once imported they are not needed again. If those folders are missing on a fresh clone, that is expected.
 
