@@ -330,7 +330,7 @@ def target_at(gap):
     """A target as the chain hands it to a plugin."""
     true = dict(zip(errors.STATE, [gap, 0.0, 0.0, 0.0, 5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 2.0, 1.5]))
     return {'id': 1, 'name': 'object_2', 'true': true, 'true_range': gap, 'range': gap, **true, 'seen': True,
-            'class_correct': True, 'predicted': False, 'log': {}}
+            'class_correct': True, 'predicted': False, 'log': {}, 'last_noisy_range': gap}
 
 
 class FittedTests(unittest.TestCase):

@@ -84,7 +84,7 @@ class Error:
                 missed = override
                 self._chain[name] = missed  # keep chain state consistent
             elif step % self._per_frame == 0:
-                r = target['true_range']
+                r = target.get('last_noisy_range', target['true_range'])
                 p = self._miss_rate_at(r)
                 rng = self._rng[name]
                 if self.settings['miss_model'] == 'iid':
