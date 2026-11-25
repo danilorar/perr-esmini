@@ -1,0 +1,9 @@
+{
+  "esmini_name": "ACCController",
+  "native": true,
+  "sources": [],
+  "header": "",
+  "factory": "",
+  "properties": {"setSpeed": "120", "timeGap": "1.5"},
+  "signals": {}
+}

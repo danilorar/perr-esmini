@@ -1,0 +1,9 @@
+{
+  "esmini_name": "ALKS_R157SM_Controller",
+  "native": true,
+  "sources": [],
+  "header": "",
+  "factory": "",
+  "properties": {"model": "ReferenceDriver"},
+  "signals": {}
+}
