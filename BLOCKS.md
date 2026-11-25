@@ -17,7 +17,7 @@ _Do this first, before any other block. No code changes — moves and one delete
 
 **Delete** the empty directory `esmini/` at the repo root.
 
-**Do not touch** anything else — `pipeline/scenarios/local/import_report.csv`, `OSC-NCAP-scenarios/`, `experiments/`, `data/`, or `runtime/` are all left exactly as they are.
+**Do not touch** anything else — `pipeline/scenarios/imported/import_report.csv`, `OSC-NCAP-scenarios/`, `experiments/`, `data/`, or `runtime/` are all left exactly as they are.
 
 **Done when**: `python -m unittest discover tests` still passes after the moves, and `git status` shows the renames (not deletions of tracked files).
 
@@ -56,7 +56,7 @@ git mv experiments/tasc_tolerance.json        experiments/archive/
 Leave `smoke.json` at the root of `experiments/` — it is the standard sanity check.
 
 ### 3. Create cluster index files
-Create `data/ccr/index.md` listing the TASC car-car scenario names (from `pipeline/scenarios/local/scenarios.json`, group `car`).  
+Create `data/ccr/index.md` listing the TASC car-car scenario names (from `pipeline/scenarios/imported/scenarios.json`, group `car`).  
 Create `data/vru_cb/index.md` listing the TASC cyclist scenario names (group `cyclist` and `bicycle`).  
 Each file is a simple markdown table: scenario name | source file | notes. No pipeline files are moved.
 

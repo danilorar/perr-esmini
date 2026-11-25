@@ -138,7 +138,7 @@ def _add_time_stop(root, value=STOP_TIME_S):
 
 
 def import_ncap(files=None, target=None):
-    """Import NCAP scenarios into *target* (default: pipeline/scenarios/local/).
+    """Import NCAP scenarios into *target* (default: pipeline/scenarios/imported/).
 
     *files* is a list of (key, title, group, xosc_path) tuples.  When omitted the standard
     7 CA-FC 2026 single-execution scenarios are imported.

@@ -196,7 +196,7 @@ AGENTS.md           rules for AI agents (CLAUDE.md loads it for Claude Code)
 
 Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`, `PerceptionModels.pdf`, `esmini`,
 `requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results),
-`pipeline/scenarios/local/` (imported TASC cases).
+`pipeline/scenarios/imported/` (imported TASC + NCAP cases).
 
 ## Good to know
 
@@ -204,7 +204,7 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
 - The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
   are imported with `python -m pipeline import-tasc <folder>`. HiDrive is a forward AEB, so only cases where the ego's
   front hits the other road user are kept: 119 of 149, as `tasc_car_*` (98) and `tasc_cyclist_*` (21) in
-  `pipeline/scenarios/local/`, outside Git. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
+  `pipeline/scenarios/imported/`. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
   start are skipped; see `docs/TASC_SCENARIOS.md`, and `import_report.csv` next to the cases for each file's reason.
   The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
   bicycle-sized box.

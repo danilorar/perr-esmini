@@ -7,7 +7,7 @@ keeps only the cases where the front of the ego (`object_1`) runs into the other
 
 The case files are teacher data and stay out of Git. Import them with
 `python -m pipeline import-tasc <folder> [--bicycle]`; running it again removes cases that are now skipped from
-`pipeline/scenarios/local/`. `import_report.csv` there gives the reason for every skipped file.
+`pipeline/scenarios/imported/`. `import_report.csv` there gives the reason for every skipped file.
 
 ## The upload of 2026-11-11
 

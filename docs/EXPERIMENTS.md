@@ -90,7 +90,7 @@ so this file is the shared record of what was run and what it showed.
 ### TASC cases (`tasc_baseline`, `tasc_tolerance`, `tasc_bicycle`)
 - Source: the teacher's upload of 2026-11-11 (Cut-in 7, Rear-end car-car 110, Rear-end car-cyclist 32 files), imported
   with `python -m pipeline import-tasc`. The files stay out of Git (teacher data, public repository); each registry
-  entry in `pipeline/scenarios/local/scenarios.json` keeps the SHA-1 of its source file.
+  entry in `pipeline/scenarios/imported/scenarios.json` keeps the SHA-1 of its source file.
 - Scope changed on 2026-11-15: `import-tasc` now keeps only cases where the ego's front runs into the other road user,
   119 of 149 (car-car 98, cyclist 21); see `docs/TASC_SCENARIOS.md`. The runs recorded here used the import of
   2026-11-11 below, which also held 5 cut-in, 3 car-car and 3 cyclist cases that are now skipped. All 11 crashed without

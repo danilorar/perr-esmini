@@ -1,11 +1,11 @@
-"""Scenarios: OpenSCENARIO files in data/, listed in scenarios.json.
+"""Scenarios: OpenSCENARIO files in fixtures/, listed in scenarios.json.
 
-To add one, put the .xosc and its .xodr (same name) in data/ and add a line to scenarios.json. The file needs:
+To add one, put the .xosc and its .xodr (same name) in fixtures/ and add a line to scenarios.json. The file needs:
 - an ego ("ego" in scenarios.json, default object_1) with an ObjectController and an ActivateControllerAction in Init;
 - a storyboard StopTrigger with a SimulationTimeCondition (rule greaterThan).
 The IDs gidas_* keep the names of earlier results; the data are TASC data.
 
-Scenarios imported with "python -m pipeline import-tasc" live in local/ (not in Git, see tasc.py). They do not join
+Scenarios imported with "python -m pipeline import-tasc" live in imported/ (see tasc.py). They do not join
 the default set of a grid; name them, or use patterns such as "tasc_car_*".
 """
 from dataclasses import dataclass
@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from ..common import read_json
 
 FOLDER = Path(__file__).resolve().parent
-LOCAL = FOLDER / 'local'
+LOCAL = FOLDER / 'imported'
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class Scenario:
         return {p.get('name'): p.get('value') for p in properties.findall('Property')} if properties is not None else {}
 
 
-def load(key, entry, folder=FOLDER / 'data'):
+def load(key, entry, folder=FOLDER / 'fixtures'):
     source = folder / entry['file']
     root = ET.parse(source).getroot()
     names = [item.get('name') for item in root.findall('./Entities/ScenarioObject')]
@@ -90,7 +90,7 @@ def local_scenarios(folder=None):
 
 def known():
     """Every scenario: {key: (entry, folder)}, shared first."""
-    found = {key: (entry, FOLDER / 'data') for key, entry in all_scenarios().items()}
+    found = {key: (entry, FOLDER / 'fixtures') for key, entry in all_scenarios().items()}
     for key, entry in local_scenarios().items():
         if key in found:
             raise ValueError(f'{key}: a local scenario has the name of a shared one.')

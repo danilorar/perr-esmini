@@ -89,7 +89,7 @@ def canonical(path):
 
 class TascImportTests(unittest.TestCase):
     """The teacher's case files lack the controller and, for cut-in, the stop trigger; see scenarios/tasc.py."""
-    SHARED = scenarios.FOLDER / 'data' / 'C_original_1554431.xosc'
+    SHARED = scenarios.FOLDER / 'fixtures' / 'C_original_1554431.xosc'
 
     def case(self, folder, group, *, swap=False, overlap=False, no_stop=False, beside=None):
         """Write the shared file 1554431 in the teacher's format into <folder>/<group>/.
