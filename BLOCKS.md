@@ -4,146 +4,55 @@ Reference: `docs/SUMMARY.md` (NCAP + controller analysis), `docs/EXPERIMENTS.md`
 
 ---
 
-## Block 0 — Repo cleanup
-_Do this first, before any other block. No code changes — moves and one delete only._
-
-**Create `archive/` at the repo root** with three subfolders, then move:
-
-| Source | Destination |
-|---|---|
-| `docs/radar_plugin_design.md` | `archive/docs/radar_plugin_design.md` |
-| `configs/example_controller.json` | `archive/configs/example_controller.json` |
-| `pipeline/controllers/example_aeb/` (whole folder) | `archive/controllers/example_aeb/` |
-
-**Delete** the empty directory `esmini/` at the repo root.
-
-**Do not touch** anything else — `pipeline/scenarios/imported/import_report.csv`, `OSC-NCAP-scenarios/`, `experiments/`, `data/`, or `runtime/` are all left exactly as they are.
-
-**Done when**: `python -m unittest discover tests` still passes after the moves, and `git status` shows the renames (not deletions of tracked files).
-
----
-
-## Block 0b — Folder reorganisation
-_No code changes. Moves and new index files only._
-
-### 1. Move NCAP source into `data/`
-```
-mkdir -p data/ncap
-git mv OSC-NCAP-scenarios/OpenSCENARIO data/ncap/OpenSCENARIO
-git mv OSC-NCAP-scenarios/OpenDRIVE    data/ncap/OpenDRIVE
-git mv OSC-NCAP-scenarios/CONTRIBUTING.md data/ncap/CONTRIBUTING.md
-git mv OSC-NCAP-scenarios/LICENSE      data/ncap/LICENSE
-git mv OSC-NCAP-scenarios/README.md    data/ncap/README.md
-rmdir OSC-NCAP-scenarios
-```
-
-### 2. Archive the 11 completed experiment grids
-```
-mkdir -p experiments/archive
-git mv experiments/detection_seeds_50_99.json experiments/archive/
-git mv experiments/fitted_profiles.json       experiments/archive/
-git mv experiments/fitted_target_offsets.json experiments/archive/
-git mv experiments/lost_target.json           experiments/archive/
-git mv experiments/ou_bias.json               experiments/archive/
-git mv experiments/ou_size.json               experiments/archive/
-git mv experiments/ou_tau.json                experiments/archive/
-git mv experiments/range_factors.json         experiments/archive/
-git mv experiments/size_geometry.json         experiments/archive/
-git mv experiments/tasc_baseline.json         experiments/archive/
-git mv experiments/tasc_bicycle.json          experiments/archive/
-git mv experiments/tasc_tolerance.json        experiments/archive/
-```
-Leave `smoke.json` at the root of `experiments/` — it is the standard sanity check.
-
-### 3. Create cluster index files
-Create `data/ccr/index.md` listing the TASC car-car scenario names (from `pipeline/scenarios/imported/scenarios.json`, group `car`).  
-Create `data/vru_cb/index.md` listing the TASC cyclist scenario names (group `cyclist` and `bicycle`).  
-Each file is a simple markdown table: scenario name | source file | notes. No pipeline files are moved.
-
-### Done when
-- `python -m unittest discover tests` passes.
-- `git status` shows all moves as renames (R).
-- `OSC-NCAP-scenarios/` no longer exists at the repo root.
-- `experiments/` root contains only `smoke.json` and the `archive/` subfolder.
-
----
-
 ## Frozen decisions
 
 | Decision | Choice |
 |---|---|
 | esmini version | Stay on **3.8.1** — OSC 1.3 fully supported |
 | radar.py | **Archived** — future work, not in this paper |
-| Controllers | **HiDrive** + **ALKS_R157SM** (ReferenceDriver) + **ACCController** |
+| Controllers | **HiDrive** + **ALKS_R157SM** + **ACCController** |
 | Scenario clusters | CCR (rear-end car-car) · VRU-CB (car-to-bicyclist) |
 | VRU-CP (pedestrian) | Deferred — pending ClothoidSpline verification |
 | TASC data | **Re-run** inside the clusters alongside NCAP cases |
-
----
-
-## Block 1 — Bridge verification
-_Prerequisite for all controller grids. One person, one run._
-
-**Goal**: confirm the PerceptionBridge corrupts what native esmini controllers see.
-
-**What to do**
-- Run one CCRs scenario with `ALKS_R157SM_Controller` (ReferenceDriver) and no errors → record brake trigger time / minimum gap.
-- Re-run the same scenario with a large bias (`+30 %` OU or fixed offset) → check if the controller brakes later or not at all.
-- Repeat for `ACCController`.
-
-**Done when**: both controllers show a measurable change in brake trigger time under the large bias. If not, flag immediately — a wrapper approach is needed before any grid.
-
----
-
-## Block 2 — Scenario import
-_Can run in parallel with Block 1._
-
-**Goal**: both NCAP clusters registered in the pipeline and smoke-tested.
-
-### 2a — CCR cluster
-- Import `OSC-NCAP-scenarios/OpenSCENARIO/NCAP/CA-FC_2026/CCRs.xosc` as the base scenario.
-- Expose the speed parameters so the grid can sweep CCRs / CCRb / CCRm variants.
-- Add the 2023 version (`AEB_C2C_2023/NCAP_AEB_C2C_CCR_2023.xosc`) as a cross-check entry.
-- Smoke-run each imported case with no errors and confirm it completes.
-- TASC car-car cases are already in the registry — verify they still run cleanly after any import changes.
-
-**Done when**: `python -m pipeline run configs/<ccr_smoke>.json` finishes without error for at least one NCAP CCR case and two TASC car-car cases.
-
-### 2b — VRU-CB cluster
-- Import the four CA-FC 2026 cyclist files: `CBNA`, `CBNAO`, `CBFA`, `CBLA`.
-- Adapt if needed (note: no ClothoidSpline in these files — adaptation should be minimal or none).
-- Smoke-run each with no errors.
-- TASC cyclist cases: verify they run cleanly under the same controller(s) used for NCAP VRU-CB.
-
-**Done when**: all four NCAP CB cases + existing TASC cyclist cases complete a no-error smoke run.
+| PerceptionBridge | Already wraps all controller steps — no C++ changes needed |
 
 ---
 
 ## Controller–scenario assignment
 
-Which controller runs in which cluster, and why:
-
-| Controller | CCR | VRU-CB | Why |
-|---|---|---|---|
-| **HiDrive** | ✓ all variants | ✓ | Forward AEB — designed to brake for any obstacle ahead, car or cyclist |
-| **ACC** | ✓ CCRb + CCRm only | ✗ | Adaptive cruise: maintains gap to a moving lead vehicle. Meaningful in braking/moving scenarios; ignores crossing cyclists entirely |
-| **ALKS R157** | ✓ all variants | ✗ | Highway lane-keeping; R157 regulation specifically defines CCRs/CCRb/CCRm as its test cases. Not designed for VRU crossing |
-
-**CCRs (stationary target)**: ACC excluded — ACC does not perform emergency braking on stationary objects.
+| Controller | CCR (CCRs) | CCR (CCRb/CCRm) | VRU-CB | Why |
+|---|---|---|---|---|
+| **HiDrive** | ✓ | ✓ | ✓ | Forward AEB — brakes for any obstacle ahead |
+| **ACC** | ✗ | ✓ | ✗ | Follows a moving lead vehicle; can't emergency-brake a stationary target or a crossing cyclist |
+| **ALKS R157** | ✓ | ✓ | ✗ | R157 regulation defines CCRs/CCRb/CCRm as its test cases; not designed for VRU |
 
 ---
 
-## Block 3 — Controller integration
-_Depends on Block 1 passing. All three controllers are already registered — this block is about baselines._
+## Block 2 — Scenario smoke-run ← **next**
+_Registration and files are already in place. This block is just end-to-end verification._
 
-**Goal**: record a no-error baseline for every valid controller–scenario combination. These become the reference rows in every comparison table.
+Run these configs with no errors and confirm each completes without crash:
 
-**What to do**
-- Run no-error baselines for the combinations in the table above.
-- Record crash / no-crash and minimum gap for each.
-- Confirm `python -m unittest discover tests` passes after any config additions.
+| Scenario | Controller | Config to create |
+|---|---|---|
+| `ncap_ccrs_50` | hidrive | `configs/smoke_ccrs.json` |
+| `ncap_ccrb_50` | hidrive | `configs/smoke_ccrb.json` |
+| `ncap_ccrm_50` | hidrive | `configs/smoke_ccrm.json` |
+| `ncap_cbna_50` | hidrive | `configs/smoke_cbna.json` |
+| `tasc_car_1549178` | hidrive | `configs/smoke_tasc_car.json` |
+| `tasc_cyclist_1543798` | hidrive | `configs/smoke_tasc_cyclist.json` |
 
-**Done when**: baseline numbers documented in `docs/EXPERIMENTS.md` for HiDrive/ACC/ALKS on CCR, and HiDrive on VRU-CB.
+**Done when**: all six complete, `end_reason` is `scenario_stop` or `collision` (not an error/crash), numbers logged in `docs/EXPERIMENTS.md`.
+
+---
+
+## Block 3 — No-error baselines
+
+_All three controllers are already registered. This block records the reference numbers._
+
+For each valid controller–scenario combination in the assignment table above, run with no errors and record crash / no-crash and minimum gap. These become the reference row in every comparison table.
+
+**Done when**: baseline numbers in `docs/EXPERIMENTS.md` for all combinations.
 
 ---
 
@@ -154,7 +63,7 @@ _Depends on Blocks 2 + 3._
 
 **Question**: at what error level does each controller fail to avoid a rear-end collision?
 
-**Error levels** (same as `tasc_tolerance` for comparability):
+**Error levels**:
 - OU random: 5 %, 10 %, 20 %
 - Too-far bias: +5, +10, +15, +20 %
 - Miss rate: 10 % (vanish)
@@ -182,12 +91,11 @@ _Depends on Blocks 2 + 3._
 ## Block 5 — Paper structure
 _Can start in parallel with Block 4._
 
-**6-page IEEE paper — SENSI project contribution.**  
-Existing results from `docs/EXPERIMENTS.md` feed directly into Sections 3–4.
+**6-page IEEE paper — SENSI project contribution.**
 
 | Section | Content | Key figure / table |
 |---|---|---|
-| 1. Introduction | AEB + perception gap + SENSI placement (this paper closes the loop) | — |
+| 1. Introduction | AEB + perception gap + SENSI placement | — |
 | 2. Framework | Error chain · PerceptionBridge · scenario clusters · controllers | Pipeline diagram |
 | 3. Sensitivity results (CCR) | Which error types crash, at what levels, across controllers | Crash rate × error level table |
 | 4. Fitted K-Radar + VRU | Real detector profiles · cyclist cluster results | Miss-length vs crash plot |
