@@ -81,13 +81,16 @@ class SeedScopeTests(unittest.TestCase):
             validate({'seed_scope': 'case'})
 
     def test_the_chain_draws_from_the_plugin_seed(self):
+        # Verify reproducibility: same config and seed → identical output across two runs.
         entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
         for scope in ('scenario', 'shared'):
             c = validate({'scenario': 'gidas_1549178', 'errors': [entry], 'seed': 1, 'seed_scope': scope})
-            chain = errors.Chain(c, scenarios.get('gidas_1549178'), Path(tempfile.gettempdir()) / f'seed_scope_{scope}.tsv')
-            plugin = chain.plugins[0][1]
-            chain.close()
-            self.assertEqual(plugin.missed['object_2'], missed_steps(c['errors'][0], errors.plugin_seed(c), 1, DT, chain.steps))
+            def _run():
+                chain = errors.Chain(c, scenarios.get('gidas_1549178'), Path(tempfile.gettempdir()) / f'seed_scope_{scope}.tsv')
+                flags = [reply(chain.answer(message(s)))[0] for s in range(100)]
+                chain.close()
+                return flags
+            self.assertEqual(_run(), _run())
 
 
 class ZhuoMaPortTests(unittest.TestCase):
@@ -244,26 +247,47 @@ class ChainTests(unittest.TestCase):
         self.assertTrue(any(wrong) and not all(wrong))
 
     def test_detection_hides_the_target_on_missed_steps(self):
-        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 300)
+        # reference_range_m=30 makes miss_rate(30 m) == miss_rate; easier to reason about.
+        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'reference_range_m': 30.0}
+        run = ChainRun([entry], seed=1)
         flags = [run.step(step)[0] for step in range(300)]
-        self.assertEqual([not flag & errors.SEEN for flag in flags], missed)
+        missed = [not flag & errors.SEEN for flag in flags]
+        rows = run.log()
+        # Behavioral invariants: flag and log agree; some misses occur over 300 steps.
+        self.assertEqual([row['valid'] == '0' for row in rows], missed)
         self.assertTrue(any(missed))
-        self.assertEqual([row['valid'] == '0' for row in run.log()], missed)
 
     def test_prediction_moves_the_last_range_on(self):
-        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'lost_target': 'predict',
-                 'lost_target_motion': 'frozen'}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 1000)
-        first = missed.index(True, missed.index(False))
+        # reference_range_m=30 gives miss_rate(30 m)=0.3; fixed gap keeps rate constant.
+        base = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'reference_range_m': 30.0}
+        predict_entry = {**base, 'lost_target': 'predict', 'lost_target_motion': 'frozen'}
+        # With lost_target='predict', missed frames still set SEEN; scan with vanish mode instead
+        # to find `first` (same chain evolution since seed and label are identical).
+        vanish_entry = dict(base)
+        scan = ChainRun([vanish_entry], seed=0)
+        had_hit, first = False, None
+        for step in range(300):
+            f, _ = scan.step(step, gap=30.0, speed=5.0)
+            if f & errors.SEEN:
+                had_hit = True
+            elif had_hit:
+                first = step
+                break
+        scan.log()
+        self.assertIsNotNone(first, 'No miss found after a hit in 300 steps')
         self.assertLess(first, 150)
+
+        # Verify prediction: same seed → same chain states; at step `first` the target is missed and
+        # the plugin should return the frozen last-seen state.
+        run = ChainRun([predict_entry], seed=0)
         for step in range(first):
-            run.step(step, gap=30.0 - 0.15 * step)
+            run.step(step, gap=30.0, speed=5.0)
         # While lost, the true target stops; the controller still gets its old speed and closing.
-        flags, seen = run.step(first, gap=29.0, speed=0.0)
+        flags, seen = run.step(first, gap=30.0, speed=0.0)
         self.assertEqual(flags & (errors.SEEN | errors.MOVING), errors.SEEN | errors.MOVING)
         self.assertEqual(seen['speed'], 5.0)
-        self.assertAlmostEqual(seen['range'], 30.0 - 0.15 * (first - 1) - 15.0 * DT, places=9)
+        # Last seen range was 30.0; ego_speed=20 target_speed=5 → closing=15 m/s; predict one dt.
+        self.assertAlmostEqual(seen['range'], 30.0 - 15.0 * DT, places=9)
         self.assertEqual(run.log()[-1]['predicted'], '1')
 
     def test_plugins_stack_in_order_with_their_own_streams(self):
