@@ -119,18 +119,31 @@ _Can run in parallel with Block 1._
 
 ---
 
-## Block 3 — Controller integration
-_Depends on Block 1 passing._
+## Controller–scenario assignment
 
-**Goal**: HiDrive, ALKS_R157SM, and ACCController all working through the PerceptionBridge on CCR scenarios.
+Which controller runs in which cluster, and why:
+
+| Controller | CCR | VRU-CB | Why |
+|---|---|---|---|
+| **HiDrive** | ✓ all variants | ✓ | Forward AEB — designed to brake for any obstacle ahead, car or cyclist |
+| **ACC** | ✓ CCRb + CCRm only | ✗ | Adaptive cruise: maintains gap to a moving lead vehicle. Meaningful in braking/moving scenarios; ignores crossing cyclists entirely |
+| **ALKS R157** | ✓ all variants | ✗ | Highway lane-keeping; R157 regulation specifically defines CCRs/CCRb/CCRm as its test cases. Not designed for VRU crossing |
+
+**CCRs (stationary target)**: ACC excluded — ACC does not perform emergency braking on stationary objects.
+
+---
+
+## Block 3 — Controller integration
+_Depends on Block 1 passing. All three controllers are already registered — this block is about baselines._
+
+**Goal**: record a no-error baseline for every valid controller–scenario combination. These become the reference rows in every comparison table.
 
 **What to do**
-- For ALKS_R157SM and ACCController: wire them into the pipeline's controller registry (like HiDrive is wired).
-- Write a minimal `controller.json` / config entry for each specifying the esmini property name.
-- Confirm `python -m unittest discover tests` passes.
-- Run a no-error baseline on CCRs for each controller; record crash / no-crash and minimum gap — this becomes the reference row in every future comparison table.
+- Run no-error baselines for the combinations in the table above.
+- Record crash / no-crash and minimum gap for each.
+- Confirm `python -m unittest discover tests` passes after any config additions.
 
-**Done when**: three controllers each produce a reproducible no-error baseline on CCRs. Numbers documented in `docs/EXPERIMENTS.md`.
+**Done when**: baseline numbers documented in `docs/EXPERIMENTS.md` for HiDrive/ACC/ALKS on CCR, and HiDrive on VRU-CB.
 
 ---
 
@@ -139,7 +152,7 @@ _Depends on Blocks 2 + 3._
 
 ### 4a — CCR grid
 
-**Question**: do the error sensitivity levels from the TASC-based grids hold across NCAP CCR cases and across all three controllers?
+**Question**: at what error level does each controller fail to avoid a rear-end collision?
 
 **Error levels** (same as `tasc_tolerance` for comparability):
 - OU random: 5 %, 10 %, 20 %
@@ -147,19 +160,19 @@ _Depends on Blocks 2 + 3._
 - Miss rate: 10 % (vanish)
 - Fitted profile: ASF (distance error + misses)
 
-**Scenario set**: NCAP CCR (CCRs / CCRb / CCRm variants) + TASC car-car cases  
-**Controllers**: HiDrive · ALKS_R157SM · ACCController  
-**Seeds**: 10 per case (consistent with `tasc_tolerance`)
+**Scenario set**: NCAP CCRs + CCRb + CCRm (50 kph) + TASC car-car cases  
+**Controllers**: HiDrive (all) · ACC (CCRb + CCRm only) · ALKS (all)  
+**Seeds**: 10 per case
 
-**Done when**: grid completes, `summary.json` for each run, results in `output/grids/ncap_ccr/`. Key table: crash rate × error level × controller.
+**Done when**: grid completes in `output/grids/ncap_ccr/`. Key table: crash rate × error level × controller.
 
 ### 4b — VRU-CB grid
 
-**Question**: how do the same error types affect a crossing/cyclist scenario? Does identification (wrong class → different size assumption) matter more here than in CCR?
+**Question**: how do the same error types affect a crossing-cyclist scenario?
 
 **Error levels**: same set as 4a  
 **Scenario set**: NCAP CBNA · CBNAO · CBFA · CBLA + TASC cyclist cases  
-**Controllers**: ALKS_R157SM + whichever of HiDrive/ACC handles VRU scenarios (confirm at Block 3)  
+**Controllers**: HiDrive only  
 **Seeds**: 10 per case
 
 **Done when**: grid completes in `output/grids/ncap_vru_cb/`. Key table: crash rate × error level × scenario type.
