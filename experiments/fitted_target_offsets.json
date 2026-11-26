@@ -1,11 +1,11 @@
 {
   "name": "fitted_target_offsets",
-  "description": "Does the fitted distance error still crash only the two TASC car-car cases with a few decimetres of margin when each car keeps one whole-run offset drawn from the K-Radar log (offset target), as the log shows a few cars read 1-2.3 m too far for their whole track? Same cases, seeds, condition and lost-target handling as the range_only group of fitted_profiles, misses off. 2058 runs.",
+  "description": "With the corrected K-Radar detector tables (2026-11-25), does letting each car keep one whole-run offset drawn from the log (offset target) crash other cases than one bias and spread for all cars (range_only group of fitted_profiles)? Same cases, seeds, condition and lost-target handling as that group, misses off. 3038 runs.",
   "scenarios": ["tasc_car_*"],
   "base": {"errors": [{"type": "fitted", "condition": "range", "offset": "target", "misses": false,
                        "lost_target": "predict", "lost_target_motion": "frozen", "lost_target_distance": "frozen_object"}]},
   "groups": [
     {"name": "no_error", "set": {"errors": []}, "seeds": [1]},
-    {"name": "range_only", "vary": {"errors.fitted.profile": ["asf", "pvrcnn"]}, "seeds": {"first": 1, "count": 10}}
+    {"name": "range_only", "vary": {"errors.fitted.profile": ["asf", "pvrcnn", "l4dr"]}, "seeds": {"first": 1, "count": 10}}
   ]
 }
