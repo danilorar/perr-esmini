@@ -1,0 +1,1 @@
+{"scenario": "ncap_ccrb_50", "controller": "acc", "seed": 1, "errors": [{"type": "ou", "bias_pct": 30.0, "mae_pct": 0.0}]}

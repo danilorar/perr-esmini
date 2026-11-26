@@ -34,6 +34,26 @@ so this file is the shared record of what was run and what it showed.
 | `fitted_profiles` | With the distance error and misses of two real detectors (fitted from K-Radar, `fitted` plugin), does HiDrive still avoid the TASC car-car crashes it avoids without error, and is it the distance error or the misses? | 5978 | 2026-11-17 | Windows 11, `407795b` | 81 of 98 cases safe without error; each case draws its own errors. Distance error alone: only the two cases with 0.20 and 0.32 m left without error (`1571693`, `1620061`) crash, in 11/20 (ASF) and 10/20 (PV-RCNN) runs; 0/1580 in the other 79. Misses alone: 36/810 = 4.4% (3.0–6.0%, bootstrap over cases) ASF and 32/810 = 4.0% (2.6–5.4%) PV-RCNN, in 29 and 25 cases, spread over all seeds. By the longest miss while the ego moves, both detectors together: under 0.5 s 5/709 crash, 0.5–1 s 9/152, 1–2 s 19/74, 2–3 s 14/33, 3 s or more 21/28. Both errors: 43/810 = 5.3% (3.1–8.1%) and 37/810 = 4.6% (2.7–7.2%), relative impact median 24 km/h, max 58. Cases that crash without error (17): misses avoid 0/170 and 1/170 of the crashes, the distance error 27/170 and 13/170 | The fitted distance error (0.24–0.71 m spread) matters only where the margin is a few decimetres. Misses decide: about 4% of runs crash, 54 of the 68 after a loss of 1 s or more while closing in. ASF and PV-RCNN do not differ beyond the noise. Error values fitted from one research car's log, not assumed. The first run, at `ab2d102` with one pattern per seed shared by all cases, gave 50/810 and 76/810 misses-only crashes, mostly from seed 9 (`output/grids/fitted_profiles_shared_seeds/`) |
 | `fitted_target_offsets` | Does the fitted distance error still crash only the two cases with a few decimetres of margin when each car keeps one whole-run offset drawn from the K-Radar log (`offset` `target`)? The log has a few cars read 1–2.3 m too far for their whole track, which one Gaussian almost never gives under 25 m (`output/kradar/tail_check/`) | 2058 | 2026-11-23 | Windows 11, `86756ab` | 81 safe cases, 810 runs per detector, misses off. ASF 15/810 = 1.9% in 4 cases (was 11/810 in 2): the two low-margin cases as before, plus `1595368` and `1553490` (2.50 and 2.80 m left without error), both after drawing ASF's +2.26 m car. That car was drawn in 15 runs: 2 crashes, 2 more ended within 0.6 m, the gap shrank by about 2–3 m in most. PV-RCNN 12/810 = 1.5% in 3 cases (was 10/810 in 2): its largest offset (+1.08 m) was drawn in 15 runs, all in cases with 1.8 m or more, no crash; the third case (`1605269`, 4.83 m) crashed with a +0.09 m offset because HiDrive never braked harder than 3.5 m/s² (31 runs in each grid stay below 4 m/s², this is the only crash among them) | A car misread by about 2 m for its whole track turns cases with 2–3 m margin into crashes; the pooled share moves little (1.4 to 1.9% for ASF) because such a car is 1 of 46 in the log. Whether it is 1 in 46 is uncertain: in a half split the extreme cars fall in one half, so fitting on the other half does not reproduce them |
 
+## Block 3 — No-error baselines (2026-11-26, branch Aron)
+
+All 11 controller-scenario combinations, `seed=1`, `errors=[]`. Results in `output/baselines/`.
+
+| Run | Controller | Scenario | Collision | Min gap (m) | Min TTC (s) | End reason |
+|---|---|---|---|---|---|---|
+| hidrive_ncap_ccrs | HiDrive | ncap_ccrs_50 | No | 8.97 | 2.92 | scenario_stop |
+| hidrive_ncap_ccrb | HiDrive | ncap_ccrb_50 | No | 13.89 | — | scenario_stop |
+| hidrive_ncap_ccrm | HiDrive | ncap_ccrm_50 | No | 17.82 | 4.39 | scenario_stop |
+| hidrive_ncap_cbna | HiDrive | ncap_cbna_50 | No | 9.55 | 2.42 | scenario_stop |
+| hidrive_tasc_car | HiDrive | tasc_car_1549178 | No | 3.20 | 0.98 | scenario_stop |
+| hidrive_tasc_cyclist | HiDrive | tasc_cyclist_1543798 | No | 4.86 | 1.28 | scenario_stop |
+| acc_ncap_ccrb | ACC | ncap_ccrb_50 | No | 3.86 | 2.74 | scenario_stop |
+| acc_ncap_ccrm | ACC | ncap_ccrm_50 | No | 11.50 | 4.69 | scenario_stop |
+| alks_ncap_ccrs | ALKS | ncap_ccrs_50 | No | 3.17 | 3.91 | scenario_stop |
+| alks_ncap_ccrb | ALKS | ncap_ccrb_50 | No | 13.89 | — | scenario_stop |
+| alks_ncap_ccrm | ALKS | ncap_ccrm_50 | No | 14.16 | 5.44 | scenario_stop |
+
+Tightest margins: `hidrive_tasc_car` (3.20 m), `alks_ncap_ccrs` (3.17 m), `acc_ncap_ccrb` (3.86 m) — these will be most sensitive to errors in Block 4.
+
 ## Notes per grid
 
 ### Scenarios and the 2026-11-08 check

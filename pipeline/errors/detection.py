@@ -19,7 +19,10 @@ What the controller gets on a lost step (lost_target):
                   lost_target_distance "frozen_object": (live ego speed - target speed of the last seen step)
               times the elapsed time, no lower than the two boxes touching. With lost_target_motion "frozen" the
               target's speed, velocity and acceleration of the last seen step are reported as well.
-Put detection last, so the range it remembers includes the other errors.
+Put detection first (step 1), so it gates whether the frame exists at all.
+Subsequent plugins (ou, lateral, velocity, box, identification, size) only run on
+detected frames. Miss probability uses last_noisy_range (previous step's corrupted
+range from all plugins); at t=0 it falls back to true_range.
 """
 import random
 

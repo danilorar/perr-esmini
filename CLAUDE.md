@@ -47,14 +47,31 @@ Teammates use Windows and macOS; this machine is Linux.
 - `source .venv/bin/activate`
 - `python -m unittest discover tests`   (must pass before any commit)
 - `python -m pipeline setup`            (after controller or PerceptionBridge.hpp changes)
-- `python -m pipeline run configs/<cfg>.json --output output/<name>`
+- `python -m pipeline run configs/<subfolder>/<cfg>.json --output output/<subfolder>/<name>`
 - `python -m pipeline grid experiments/<grid>.json --workers N`   (start with smoke.json)
+
+## configs/ layout — one subfolder per purpose
+| Subfolder | What goes there |
+|---|---|
+| `configs/smoke/` | Block 2 end-to-end smoke runs (no errors) |
+| `configs/sanity/` | Quick error-generator sanity checks (one plugin or full chain) |
+| `configs/baselines/` | Block 3 no-error baselines for all controller-scenario combinations |
+| `configs/grids/` | Block 4 single-run configs used by grid experiments |
+| `configs/archive/` | Old one-off configs — do not use for new runs |
+
+## output/ layout — mirrors configs/
+| Subfolder | What goes there |
+|---|---|
+| `output/smoke/` | Block 2 smoke results |
+| `output/baselines/` | Block 3 baseline results — named `{controller}_{scenario}` |
+| `output/grids/` | Block 4 grid results — named `{grid_name}` |
+| `output/_archive/` | Old results — kept for reference, do not overwrite |
 
 ## Structure rules — keep the repo easy to follow
 - Docs: only `README.md`, `CLAUDE.md` and `AGENTS.md` at the root; every other .md goes in `docs/`.
   Exception: `pipeline/controllers/hidrive/AGENTS.md` stays next to the files it protects.
 - Prefer extending an existing file over adding a new script. A new error type is one file in
-  `pipeline/errors/`; a new single run is one JSON in `configs/`; a new grid is one JSON in `experiments/`.
+  `pipeline/errors/`; a new single run is one JSON in the right `configs/` subfolder; a new grid is one JSON in `experiments/`.
 - No new top-level folders without asking. Results stay in `output/` (not in Git).
 - Never search `runtime/`; for esmini source, read the zip in `runtime/downloads/`.
 
