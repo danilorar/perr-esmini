@@ -159,10 +159,27 @@ So `none` is the model to use; `target` stays as an option.
 
 ## Simulation results
 
-The grids `fitted_profiles`, `fitted_target_offsets` and `fitted_offset_tolerance` in [EXPERIMENTS.md](EXPERIMENTS.md)
-were run with the fit of the first tables (ASF spread 0.58 m, losses up to 14.9 s). Their ASF results no longer hold,
-and the PV-RCNN++ values have changed a little (spread 0.27 to 0.25 m). They need a rerun with this fit. The
-offset-only curve of `fitted_offset_tolerance` (same offset for every car, no spread) does not depend on the fit.
+Grid `fitted_profiles` (rerun 2026-11-26 with this fit): the 81 TASC car-car cases that HiDrive handles without
+error, 10 seeds, 810 runs per detector and part. 95% intervals are a bootstrap over cases.
+
+| Error | ASF | PV-RCNN++ | L4DR |
+|---|---|---|---|
+| Distance error only | 8 crashes (1.0%) | 9 (1.1%) | 8 (1.0%) |
+| Misses only | 11 (1.4%, 0.6–2.2%) | 34 (4.2%, 2.8–5.7%) | 2 (0.2%, 0.0–0.6%) |
+| Both | 20 (2.5%) | 39 (4.8%) | 9 (1.1%) |
+
+- Distance error alone crashes only the two cases that keep 0.20 and 0.32 m without error, for every detector.
+- Misses decide, and here the detectors differ: PV-RCNN++ misses most often and longest (losses up to 3.4 s in its
+  log) and crashes about four times as often as ASF. 37 of the 47 miss crashes follow a loss of 1 s or more while
+  closing in.
+- With `offset` `target` (grid `fitted_target_offsets`, rerun) the distance error crashes the same two cases (11, 10
+  and 10 runs) plus one L4DR run in the case where HiDrive never brakes harder than 3.5 m/s². The per-car offset
+  changes nothing.
+- Against the first tables: ASF's misses-only crashes fall from 36 to 11 and its 2–3 m-margin crashes with
+  `offset` `target` disappear; both came from boxes in the wrong frames. PV-RCNN++ stays about the same.
+- The spread lines of `fitted_offset_tolerance` were not rerun; its offset-only curve does not depend on the fit.
+
+Details: [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Use it in a simulation
 
