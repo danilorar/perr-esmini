@@ -32,6 +32,27 @@ so this file is the shared record of what was run and what it showed.
 | `tasc_baseline` | No error on every imported TASC case: which ones does HiDrive avoid, and do converted copies match the shared files? | 133 | 2026-11-11 | Windows 11, `e6f1024` | Car-car 81 of 101 safe; the 20 crashes are 17 cases in lane at ego 95–110 km/h and 3 side contacts where HiDrive never triggers. Cyclist 20 of 24 safe; the 4 crashes enter the ego path late or touch at the side. Cut-in 5 of 5 crash and HiDrive never triggers. `tasc_car_1554254` and `1554431` equal the shared runs exactly; `tasc_car_1549178` (real road instead of the straight one) differs by under 0.01 m | Every car-car case up to ego 75 km/h is safe without error; the cut-in cases cannot show a range-error effect with this controller |
 | `tasc_tolerance` | Do the limits found on the three shared scenarios hold across the TASC car-car and cyclist cases? | 5355 | 2026-11-17 | Windows 11, `03043b2` | Each case draws its own errors. Car-car, 81 cases safe without error, 10 seeds each: OU 5/10/20% crash in 16/810 = 2.0% (0.0–5.1%, bootstrap over cases), 41/810 = 5.1% (2.8–7.5%) and 64/810 = 7.9% (5.8–10.4%) of runs, in 3, 24 and 41 cases; at 5% 15 of the 16 are the two cases with 0.20 and 0.32 m left without error (`1571693`, `1620061`). 10% miss rate (target vanishes): 76/810 = 9.4% (7.4–11.5%) in 52 cases. Too-far bias (no randomness, unchanged) crashes 2, 3, 14, 23 of 81 cases at +5, +10, +15, +20%; 58 do not crash up to +20%. Cluster ego/target 65/55 km/h (17 cases): 11 and 16 crash at +15 and +20%; cluster 45/35 (44 cases): 0 and 1 (`1549178`). Cyclist (a car-sized box), 20 safe cases: no crash from OU or bias up to 20%, miss rate 4/200. Car-car cases that crash without error (17): median relative impact +3.1, +8.5, +12.6 km/h at OU 5/10/20% (29%, 39% and 60% of those runs avoid the crash), +10 to +22 km/h with bias and never avoided; misses never avoid one | Random error starts to crash between 5% and 10% (at 5% almost only where the margin is a few decimetres) and grows slowly: 20% crashes 8% of runs. A 10% miss rate with the target vanishing crashes more often than 20% random error. "Too far crashes for sure from 15–20%" holds only where the margin is small: the minimum gap without error, divided by the range at braking start, ranks the cases (Spearman −0.50 with the random-error and miss crashes per case), and cases under 15% hold 20 of the 23 crashes at +20%. Sensitivity levels, not sensor values. The first run (2026-11-11, `e6f1024`, 5625 runs, one error pattern per seed shared by all cases) gave OU 1.2/6.8/16.8% and misses 5.2%, mostly from seeds 2 and 4 (OU) and 10 (misses); it is kept in `output/grids/tasc_tolerance_shared_seeds/` |
 | `fitted_profiles` | With the distance error and misses of two real detectors (fitted from K-Radar, `fitted` plugin), does HiDrive still avoid the TASC car-car crashes it avoids without error, and is it the distance error or the misses? | 5978 | 2026-11-17 | Windows 11, `407795b` | 81 of 98 cases safe without error; each case draws its own errors. Distance error alone: only the two cases with 0.20 and 0.32 m left without error (`1571693`, `1620061`) crash, in 11/20 (ASF) and 10/20 (PV-RCNN) runs; 0/1580 in the other 79. Misses alone: 36/810 = 4.4% (3.0–6.0%, bootstrap over cases) ASF and 32/810 = 4.0% (2.6–5.4%) PV-RCNN, in 29 and 25 cases, spread over all seeds. By the longest miss while the ego moves, both detectors together: under 0.5 s 5/709 crash, 0.5–1 s 9/152, 1–2 s 19/74, 2–3 s 14/33, 3 s or more 21/28. Both errors: 43/810 = 5.3% (3.1–8.1%) and 37/810 = 4.6% (2.7–7.2%), relative impact median 24 km/h, max 58. Cases that crash without error (17): misses avoid 0/170 and 1/170 of the crashes, the distance error 27/170 and 13/170 | The fitted distance error (0.24–0.71 m spread) matters only where the margin is a few decimetres. Misses decide: about 4% of runs crash, 54 of the 68 after a loss of 1 s or more while closing in. ASF and PV-RCNN do not differ beyond the noise. Error values fitted from one research car's log, not assumed. The first run, at `ab2d102` with one pattern per seed shared by all cases, gave 50/810 and 76/810 misses-only crashes, mostly from seed 9 (`output/grids/fitted_profiles_shared_seeds/`) |
+| `fitted_target_offsets` | Does the fitted distance error still crash only the two cases with a few decimetres of margin when each car keeps one whole-run offset drawn from the K-Radar log (`offset` `target`)? The log has a few cars read 1–2.3 m too far for their whole track, which one Gaussian almost never gives under 25 m (`output/kradar/tail_check/`) | 2058 | 2026-11-23 | Windows 11, `86756ab` | 81 safe cases, 810 runs per detector, misses off. ASF 15/810 = 1.9% in 4 cases (was 11/810 in 2): the two low-margin cases as before, plus `1595368` and `1553490` (2.50 and 2.80 m left without error), both after drawing ASF's +2.26 m car. That car was drawn in 15 runs: 2 crashes, 2 more ended within 0.6 m, the gap shrank by about 2–3 m in most. PV-RCNN 12/810 = 1.5% in 3 cases (was 10/810 in 2): its largest offset (+1.08 m) was drawn in 15 runs, all in cases with 1.8 m or more, no crash; the third case (`1605269`, 4.83 m) crashed with a +0.09 m offset because HiDrive never braked harder than 3.5 m/s² (31 runs in each grid stay below 4 m/s², this is the only crash among them) | A car misread by about 2 m for its whole track turns cases with 2–3 m margin into crashes; the pooled share moves little (1.4 to 1.9% for ASF) because such a car is 1 of 46 in the log. Whether it is 1 in 46 is uncertain: in a half split the extreme cars fall in one half, so fitting on the other half does not reproduce them |
+
+## Block 3 — No-error baselines (2026-11-26, branch Aron)
+
+All 11 controller-scenario combinations, `seed=1`, `errors=[]`. Results in `output/baselines/`.
+
+| Run | Controller | Scenario | Collision | Min gap (m) | Min TTC (s) | End reason |
+|---|---|---|---|---|---|---|
+| hidrive_ncap_ccrs | HiDrive | ncap_ccrs_50 | No | 8.97 | 2.92 | scenario_stop |
+| hidrive_ncap_ccrb | HiDrive | ncap_ccrb_50 | No | 13.89 | — | scenario_stop |
+| hidrive_ncap_ccrm | HiDrive | ncap_ccrm_50 | No | 17.82 | 4.39 | scenario_stop |
+| hidrive_ncap_cbna | HiDrive | ncap_cbna_50 | No | 9.55 | 2.42 | scenario_stop |
+| hidrive_tasc_car | HiDrive | tasc_car_1549178 | No | 3.20 | 0.98 | scenario_stop |
+| hidrive_tasc_cyclist | HiDrive | tasc_cyclist_1543798 | No | 4.86 | 1.28 | scenario_stop |
+| acc_ncap_ccrb | ACC | ncap_ccrb_50 | No | 3.86 | 2.74 | scenario_stop |
+| acc_ncap_ccrm | ACC | ncap_ccrm_50 | No | 11.50 | 4.69 | scenario_stop |
+| alks_ncap_ccrs | ALKS | ncap_ccrs_50 | No | 3.17 | 3.91 | scenario_stop |
+| alks_ncap_ccrb | ALKS | ncap_ccrb_50 | No | 13.89 | — | scenario_stop |
+| alks_ncap_ccrm | ALKS | ncap_ccrm_50 | No | 14.16 | 5.44 | scenario_stop |
+
+Tightest margins: `hidrive_tasc_car` (3.20 m), `alks_ncap_ccrs` (3.17 m), `acc_ncap_ccrb` (3.86 m) — these will be most sensitive to errors in Block 4.
 
 ## Notes per grid
 
@@ -89,7 +110,7 @@ so this file is the shared record of what was run and what it showed.
 ### TASC cases (`tasc_baseline`, `tasc_tolerance`, `tasc_bicycle`)
 - Source: the teacher's upload of 2026-11-11 (Cut-in 7, Rear-end car-car 110, Rear-end car-cyclist 32 files), imported
   with `python -m pipeline import-tasc`. The files stay out of Git (teacher data, public repository); each registry
-  entry in `pipeline/scenarios/local/scenarios.json` keeps the SHA-1 of its source file.
+  entry in `pipeline/scenarios/imported/scenarios.json` keeps the SHA-1 of its source file.
 - Scope changed on 2026-11-15: `import-tasc` now keeps only cases where the ego's front runs into the other road user,
   119 of 149 (car-car 98, cyclist 21); see `docs/TASC_SCENARIOS.md`. The runs recorded here used the import of
   2026-11-11 below, which also held 5 cut-in, 3 car-car and 3 cyclist cases that are now skipped. All 11 crashed without
@@ -153,3 +174,18 @@ so this file is the shared record of what was run and what it showed.
   proportion to the run lengths, so this one loss gives 16% of such starts a remaining miss over 4 s.
 - Scripts and full output: `rates.py` (crash shares, bootstrap over cases, crashes by miss length), `analyse_fitted.py`,
   `gen_check.py` and `analysis.txt` in `output/grids/fitted_profiles/`; `per_seed.py` with the first run.
+
+### `fitted_target_offsets`
+- Model: `fitted` with `offset` `target`. Each target draws one of the 46 per-track mean errors of the log (tracks with
+  20+ paired frames) for the whole run, in place of b; the rest is OU + white noise with the spread around each track's
+  mean (ASF 0.32 m at 0–25 m, PV-RCNN 0.12 m) and its tau (2.0 and 1.4 s). Written by `fit-kradar` since `86756ab`
+  (`target_offset` in `pipeline/kradar/parameters.json`; every older value unchanged). `offset` `none`, the default,
+  repeats the old model.
+- Tail check before the run (`output/kradar/tail_check/`, no esmini): the old model has the right spread (ASF 0.58 m,
+  PV-RCNN 0.27 m) but the wrong shape. Under 25 m it gives > 1 m too far in 0.08% (ASF) and 0% (PV-RCNN) of frames,
+  the log 1.4% for both, each from one car: ASF `kradar_008:R:T0004` +2.26 m down to 11 m (PV-RCNN reads it right),
+  PV-RCNN `kradar_055:R:T0003` +1.08 m in snow. The near-end (rear) error is the same, so not a length error.
+  The new model gives these cars (in-sample), but its middle is still wider than the log (ASF robust spread 0.46
+  against 0.25 m). Fitted on half of the recordings it does not reproduce the other half's extreme cars, because
+  they fall in one half: the share of such cars rests on 1–3 cars per detector.
+- Scripts and output: `analysis.py` and `analysis.txt` in `output/grids/fitted_target_offsets/`.

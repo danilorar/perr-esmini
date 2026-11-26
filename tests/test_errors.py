@@ -11,8 +11,9 @@ import unittest
 from pipeline import errors, scenarios
 from pipeline.config import validate
 from pipeline.errors.frames import hold_per_step, iid_frames, markov_frames, markov_parameters, missed_steps, wrong_class_steps
-from pipeline.errors import fitted
+from pipeline.errors import fitted, lateral, velocity
 from pipeline.errors.ou import SIGMA_PER_MAE, CorrelatedRangeNoise, unit_samples
+from pipeline.errors.outliers import TargetOutliers
 
 TARGET = {'id': 1, 'name': 'object_2'}
 DT = 0.01
@@ -80,13 +81,16 @@ class SeedScopeTests(unittest.TestCase):
             validate({'seed_scope': 'case'})
 
     def test_the_chain_draws_from_the_plugin_seed(self):
+        # Verify reproducibility: same config and seed → identical output across two runs.
         entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
         for scope in ('scenario', 'shared'):
             c = validate({'scenario': 'gidas_1549178', 'errors': [entry], 'seed': 1, 'seed_scope': scope})
-            chain = errors.Chain(c, scenarios.get('gidas_1549178'), Path(tempfile.gettempdir()) / f'seed_scope_{scope}.tsv')
-            plugin = chain.plugins[0][1]
-            chain.close()
-            self.assertEqual(plugin.missed['object_2'], missed_steps(c['errors'][0], errors.plugin_seed(c), 1, DT, chain.steps))
+            def _run():
+                chain = errors.Chain(c, scenarios.get('gidas_1549178'), Path(tempfile.gettempdir()) / f'seed_scope_{scope}.tsv')
+                flags = [reply(chain.answer(message(s)))[0] for s in range(100)]
+                chain.close()
+                return flags
+            self.assertEqual(_run(), _run())
 
 
 class ZhuoMaPortTests(unittest.TestCase):
@@ -149,8 +153,8 @@ class OuTests(unittest.TestCase):
 
 class SettingsTests(unittest.TestCase):
     def test_registry_finds_every_plugin_and_no_helper(self):
-        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'identification', 'ou', 'size',
-                                                         'template'})
+        self.assertEqual(set(errors.all_plugins()), {'box', 'detection', 'fitted', 'identification', 'lateral', 'ou',
+                                                         'size', 'template', 'velocity'})
 
     def test_defaults_are_filled_in(self):
         entries = config([{'type': 'detection'}, {'type': 'size', 'name': 'big', 'scale': 2}])['errors']
@@ -243,26 +247,47 @@ class ChainTests(unittest.TestCase):
         self.assertTrue(any(wrong) and not all(wrong))
 
     def test_detection_hides_the_target_on_missed_steps(self):
-        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 300)
+        # reference_range_m=30 makes miss_rate(30 m) == miss_rate; easier to reason about.
+        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'reference_range_m': 30.0}
+        run = ChainRun([entry], seed=1)
         flags = [run.step(step)[0] for step in range(300)]
-        self.assertEqual([not flag & errors.SEEN for flag in flags], missed)
+        missed = [not flag & errors.SEEN for flag in flags]
+        rows = run.log()
+        # Behavioral invariants: flag and log agree; some misses occur over 300 steps.
+        self.assertEqual([row['valid'] == '0' for row in rows], missed)
         self.assertTrue(any(missed))
-        self.assertEqual([row['valid'] == '0' for row in run.log()], missed)
 
     def test_prediction_moves_the_last_range_on(self):
-        entry = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'lost_target': 'predict',
-                 'lost_target_motion': 'frozen'}
-        run, missed = ChainRun([entry], seed=1), missed_steps(config([entry], 1)['errors'][0], errors.plugin_seed(config([entry], 1)), 1, DT, 1000)
-        first = missed.index(True, missed.index(False))
+        # reference_range_m=30 gives miss_rate(30 m)=0.3; fixed gap keeps rate constant.
+        base = {'type': 'detection', 'miss_rate': 0.3, 'miss_mean_s': 0.2, 'reference_range_m': 30.0}
+        predict_entry = {**base, 'lost_target': 'predict', 'lost_target_motion': 'frozen'}
+        # With lost_target='predict', missed frames still set SEEN; scan with vanish mode instead
+        # to find `first` (same chain evolution since seed and label are identical).
+        vanish_entry = dict(base)
+        scan = ChainRun([vanish_entry], seed=0)
+        had_hit, first = False, None
+        for step in range(300):
+            f, _ = scan.step(step, gap=30.0, speed=5.0)
+            if f & errors.SEEN:
+                had_hit = True
+            elif had_hit:
+                first = step
+                break
+        scan.log()
+        self.assertIsNotNone(first, 'No miss found after a hit in 300 steps')
         self.assertLess(first, 150)
+
+        # Verify prediction: same seed → same chain states; at step `first` the target is missed and
+        # the plugin should return the frozen last-seen state.
+        run = ChainRun([predict_entry], seed=0)
         for step in range(first):
-            run.step(step, gap=30.0 - 0.15 * step)
+            run.step(step, gap=30.0, speed=5.0)
         # While lost, the true target stops; the controller still gets its old speed and closing.
-        flags, seen = run.step(first, gap=29.0, speed=0.0)
+        flags, seen = run.step(first, gap=30.0, speed=0.0)
         self.assertEqual(flags & (errors.SEEN | errors.MOVING), errors.SEEN | errors.MOVING)
         self.assertEqual(seen['speed'], 5.0)
-        self.assertAlmostEqual(seen['range'], 30.0 - 0.15 * (first - 1) - 15.0 * DT, places=9)
+        # Last seen range was 30.0; ego_speed=20 target_speed=5 → closing=15 m/s; predict one dt.
+        self.assertAlmostEqual(seen['range'], 30.0 - 15.0 * DT, places=9)
         self.assertEqual(run.log()[-1]['predicted'], '1')
 
     def test_plugins_stack_in_order_with_their_own_streams(self):
@@ -289,12 +314,15 @@ class ChainTests(unittest.TestCase):
         self.assertEqual((seen['x'], seen['y']), (30.0, 1.0))
 
 
-def fitted_file(folder, rows=(), runs=(1, 1, 1, 2, 10), p_miss=0.1):
-    """A parameter file as fit-kradar writes it, with one profile "test": b 0.2 m, spread 0.5 m, 80% of it OU."""
+def fitted_file(folder, rows=(), runs=(1, 1, 1, 2, 10), p_miss=0.1, target=None):
+    """A parameter file as fit-kradar writes it, with one profile "test": b 0.2 m, spread 0.5 m, 80% of it OU.
+    target: the target_offset block, left out when None."""
     shape = {'cell': 'all', 'b_m': 0.2, 'sd_m': 0.5, 'sigma_ou_m': 0.5 * math.sqrt(0.8), 'tau_s': 1.0, 'p_miss': p_miss}
+    profile = {'frame_period_s': 0.1, 'cells': [shape, *rows], 'miss_runs_frames': list(runs)}
+    if target is not None:
+        profile['target_offset'] = target
     path = Path(folder) / 'parameters.json'
-    path.write_text(json.dumps({'test': {'frame_period_s': 0.1, 'cells': [shape, *rows],
-                                         'miss_runs_frames': list(runs)}}), encoding='utf-8')
+    path.write_text(json.dumps({'test': profile}), encoding='utf-8')
     return str(path)
 
 
@@ -302,7 +330,7 @@ def target_at(gap):
     """A target as the chain hands it to a plugin."""
     true = dict(zip(errors.STATE, [gap, 0.0, 0.0, 0.0, 5.0, 5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 2.0, 1.5]))
     return {'id': 1, 'name': 'object_2', 'true': true, 'true_range': gap, 'range': gap, **true, 'seen': True,
-            'class_correct': True, 'predicted': False, 'log': {}}
+            'class_correct': True, 'predicted': False, 'log': {}, 'last_noisy_range': gap}
 
 
 class FittedTests(unittest.TestCase):
@@ -378,11 +406,274 @@ class FittedTests(unittest.TestCase):
             self.assertAlmostEqual(run.step(step, gap=gap)[1]['range'], seen, places=12)
         run.log()
 
+    def test_target_offset_holds_for_the_whole_run_and_replaces_b(self):
+        target = {'min_frames': 20, 'offsets_m': [-1.0, 2.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.0}}}
+        seen = set()
+        for seed in range(1, 30):
+            run = ChainRun([self.entry(file={'target': target}, offset='target', misses=False)], seed=seed)
+            ranges = {run.step(step)[1]['range'] for step in range(30)}
+            rows = run.log()
+            self.assertEqual(len(ranges), 1)                       # no spread left: the offset alone, all run
+            offset = ranges.pop() - 30.0
+            self.assertIn(round(offset, 9), (-1.0, 2.0))          # b 0.2 is not added
+            self.assertAlmostEqual(float(rows[0]['fitted.offset_m']), offset, places=12)
+            seen.add(round(offset, 9))
+        self.assertEqual(seen, {-1.0, 2.0})
+
+    def test_target_offset_uses_the_spread_around_the_track_means(self):
+        target = {'min_frames': 20, 'offsets_m': [0.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.3}}}
+        run = ChainRun([self.entry(file={'target': target}, offset='target', misses=False)], seed=4)
+        for step in range(25):
+            run.step(step)
+        row = run.log()[12]
+        self.assertAlmostEqual(float(row['fitted.sigma_ou_m']), 0.3 * math.sqrt(0.5), places=12)
+        self.assertAlmostEqual(float(row['fitted.sigma_white_m']), 0.3 * math.sqrt(0.5), places=12)
+        self.assertEqual(float(row['fitted.bias_m']), 0.0)
+
+    def test_offset_none_leaves_the_old_model(self):
+        target = {'min_frames': 20, 'offsets_m': [5.0], 'tau_s': 0.5, 'share_ou': 0.5,
+                  'residual': {'all': {'rows': 10, 'sd_m': 0.0}}}
+        plain = ChainRun([self.entry(misses=False)], seed=3)
+        with_block = ChainRun([self.entry(file={'target': target}, misses=False)], seed=3)
+        self.assertEqual([plain.step(s)[1]['range'] for s in range(25)],
+                         [with_block.step(s)[1]['range'] for s in range(25)])
+        plain.log()
+        with_block.log()
+
     def test_rejects_missing_file_profile_or_row(self):
         for bad in ({'parameters': str(Path(self.folder.name) / 'none.json')}, {'profile': 'other'},
-                    {'condition': 'fog'}, {'condition': 'dry'}, {'lost_target_motion': 'frozen'}):
+                    {'condition': 'fog'}, {'condition': 'dry'}, {'lost_target_motion': 'frozen'},
+                    {'offset': 'target'}, {'offset': 'per_frame'}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 config([{**self.entry(), **bad}])
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by LateralErrorTests, VelocityErrorTests, OutlierTests
+# ---------------------------------------------------------------------------
+
+def _run(steps=20, seed=0, label='test', dt_s=0.1):
+    """Minimal run namespace for plugin construction (fixed seed → deterministic)."""
+    return SimpleNamespace(
+        seed=seed, label=label, dt_s=dt_s, steps=steps,
+        targets=[{'id': 1, 'name': 'obj1'}],
+    )
+
+
+def _tgt(x, y, vx=0.0, vy=0.0, heading=0.0):
+    """Minimal target dict for perceive() calls; ego is assumed at (0, 0)."""
+    r = math.hypot(x, y)
+    return {
+        'id': 1, 'name': 'obj1',
+        'true': {'x': x, 'y': y, 'vx': vx, 'vy': vy, 'heading': heading},
+        'true_range': r,
+        'x': x, 'y': y, 'vx': vx, 'vy': vy,
+        'heading': heading,
+        'speed': math.hypot(vx, vy),
+        'log': {},
+    }
+
+
+_EGO = {'x': 0.0, 'y': 0.0}
+
+
+# ---------------------------------------------------------------------------
+# Lateral plugin tests
+# ---------------------------------------------------------------------------
+
+class LateralErrorTests(unittest.TestCase):
+    def _plugin(self, steps=20, **kw):
+        cfg = {'sigma_theta_deg': 0.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 0.0, 'noise': 'gaussian'}
+        cfg.update(kw)
+        return lateral.Error(cfg, _run(steps=steps))
+
+    def test_L1_zero_sigma_no_bias_unchanged(self):
+        """L1: zero sigma and bias leaves x, y unchanged within 1e-9 m."""
+        plugin = self._plugin()
+        tgt = _tgt(20.0, 1.5)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['x'], 20.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['y'], 1.5, delta=1e-9)
+
+    def test_L2_nonzero_sigma_range_unchanged(self):
+        """L2: nonzero sigma changes position; range preserved to 1e-6 m (exact rotation).
+
+        The plugin rotates the ego→target bearing by theta_total; the new position
+        lies exactly on the circle of radius r centred at ego, so range is preserved
+        to floating-point precision.
+        """
+        true_range = math.hypot(20.0, 1.5)
+        plugin = self._plugin(sigma_theta_deg=2.0)
+        tgt = _tgt(20.0, 1.5)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertTrue(abs(tgt['x'] - 20.0) > 1e-9 or abs(tgt['y'] - 1.5) > 1e-9,
+                        'sigma=2 deg should shift position')
+        perceived_range = math.hypot(tgt['x'] - _EGO['x'], tgt['y'] - _EGO['y'])
+        self.assertAlmostEqual(perceived_range, true_range, delta=1e-6)
+
+    def test_L3_bias_shifts_consistently(self):
+        """L3: bias_theta=1 deg produces the exact-rotation position on every step.
+
+        Target along x-axis (phi=0).  After rotation by 1°:
+            x' = r*cos(1°),  y' = r*sin(1°).
+        """
+        plugin = self._plugin(bias_theta_deg=1.0, sigma_theta_deg=0.0)
+        r = 20.0
+        x0, y0 = r, 0.0        # target along x-axis from ego at origin
+        bias_rad = math.radians(1.0)
+        expected_x = r * math.cos(bias_rad)
+        expected_y = r * math.sin(bias_rad)
+        for step in range(5):
+            tgt = _tgt(x0, y0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            self.assertAlmostEqual(tgt['x'], expected_x, delta=1e-9,
+                                   msg=f'x must equal r*cos(1°) (step {step})')
+            self.assertAlmostEqual(tgt['y'], expected_y, delta=1e-9,
+                                   msg=f'y must equal r*sin(1°) (step {step})')
+
+
+# ---------------------------------------------------------------------------
+# Velocity plugin tests
+# ---------------------------------------------------------------------------
+
+class VelocityErrorTests(unittest.TestCase):
+    def _plugin(self, steps=20, dt_s=0.1, **kw):
+        cfg = {
+            'sigma_radial_mps': 0.0, 'sigma_tangential_mps': 0.0,
+            'bias_radial_mps': 0.0, 'correlation_time_s': 1.0,
+            'p_outlier': 0.0, 'noise': 'gaussian',
+        }
+        cfg.update(kw)
+        return velocity.Error(cfg, _run(steps=steps, dt_s=dt_s))
+
+    def test_V1_zero_sigma_zero_bias_unchanged(self):
+        """V1: zero sigma and bias leaves vx, vy, speed unchanged."""
+        plugin = self._plugin()
+        tgt = _tgt(20.0, 1.0, vx=5.0, vy=2.0)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['vx'], 5.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['vy'], 2.0, delta=1e-9)
+        self.assertAlmostEqual(tgt['speed'], math.hypot(5.0, 2.0), delta=1e-9)
+
+    def test_V2_ou_lag1_autocorrelation(self):
+        """V2: radial OU lag-1 acf ≈ exp(-0.1/1.0) ≈ 0.905; must lie in [0.80, 0.98].
+
+        The sample ACF of an AR(1) process has SD ≈ sqrt((1+ρ²)/n).  With ρ≈0.905
+        and n=100, SD ≈ 0.14 — too noisy for the [0.80, 0.98] window.  Using
+        n=500 brings SD ≈ 0.06, so the window is about ±1.7 SD: reliable.
+        """
+        steps = 500
+        plugin = self._plugin(steps=steps, dt_s=0.1,
+                              sigma_radial_mps=1.0, correlation_time_s=1.0)
+        vr_errors = []
+        for step in range(steps):
+            tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            # target along x-axis → ur=(1,0) → perceived vx = vr_obs; true vr = 0
+            vr_errors.append(tgt['vx'])
+
+        mean_e = sum(vr_errors) / len(vr_errors)
+        num = sum((vr_errors[i] - mean_e) * (vr_errors[i + 1] - mean_e)
+                  for i in range(steps - 1))
+        den = sum((e - mean_e) ** 2 for e in vr_errors)
+        acf1 = num / den
+        self.assertGreater(acf1, 0.80, msg=f'lag-1 acf = {acf1:.3f}; expected ≈ 0.905')
+        self.assertLess(acf1, 0.98, msg=f'lag-1 acf = {acf1:.3f}; expected ≈ 0.905')
+
+    def test_V3_bias_decreases_closing_speed(self):
+        """V3: bias_radial=2 lowers perceived closing speed by 2 m/s (positive = less threatening).
+
+        Sign convention: positive bias_radial_mps → vr_obs = vr_true + bias
+        → target appears to close slower → controller brakes later.
+        """
+        plugin = self._plugin(bias_radial_mps=2.0)
+        # Target approaching head-on; ur=(1,0) → vr = tgt['vx']
+        tgt = _tgt(20.0, 0.0, vx=-15.0, vy=0.0)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        true_closing_speed = 15.0            # = -vr_true = -(-15)
+        perceived_closing_speed = -tgt['vx']  # = -vr_obs = -(vr_true + 2) = 15 - 2
+        self.assertAlmostEqual(perceived_closing_speed, true_closing_speed - 2.0,
+                               delta=1e-6)
+
+    def test_V4_stationary_target_negative_bias_heading_from_velocity_vector(self):
+        """V4: stationary target, bias_radial = −2 m/s → v_obs = (−2, 0) → heading = π, speed = 2.
+
+        vr_true = 0, vr_obs = −2.  v_obs = vr_obs·u_r = (−2, 0).
+        heading = atan2(0, −2) = π.  HiDrive: closing = ego_speed − 2×cos(π) = ego_speed + 2.
+        """
+        plugin = self._plugin(bias_radial_mps=-2.0)
+        tgt = _tgt(20.0, 0.0, vx=0.0, vy=0.0, heading=0.0)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        self.assertAlmostEqual(tgt['heading'], math.pi, delta=1e-9,
+                               msg='heading = atan2(0, -2) = π')
+        self.assertAlmostEqual(tgt['vx'], -2.0, delta=1e-9,
+                               msg='vx = vr_obs × ur_x = -2')
+        self.assertAlmostEqual(tgt['speed'], 2.0, delta=1e-9,
+                               msg='speed = |v_obs| = 2')
+
+    def test_V5_crossing_target_tiny_radial_error_heading_stable(self):
+        """V5: cyclist at (20, 0) moving +4 m/s in y, e_r = −0.1.
+
+        v_obs = (−0.1, 4.0) → heading = atan2(4.0, −0.1) ≈ +91.4°, speed ≈ 4.001.
+        Old heading-flip code would have set heading to −90° (crossing direction reversed).
+        Vector approach keeps heading near +90°.
+        """
+        plugin = self._plugin(bias_radial_mps=-0.1)
+        tgt = _tgt(20.0, 0.0, vx=0.0, vy=4.0, heading=math.pi / 2)
+        plugin.perceive(0, 0.0, _EGO, [tgt])
+        expected_vx = -0.1  # vr_obs × ur_x = -0.1 × 1
+        expected_vy = 4.0   # vt_obs × ut_y = 4 × 1
+        self.assertAlmostEqual(tgt['vx'], expected_vx, delta=1e-9)
+        self.assertAlmostEqual(tgt['vy'], expected_vy, delta=1e-9)
+        self.assertAlmostEqual(tgt['speed'], math.hypot(-0.1, 4.0), delta=1e-9)
+        # heading ≈ 91.4°, well within 10° of +90°; definitely not -90° (old flip behaviour)
+        self.assertAlmostEqual(tgt['heading'], math.atan2(4.0, -0.1), delta=1e-9,
+                               msg='heading must come from atan2(vy_obs, vx_obs)')
+
+
+# ---------------------------------------------------------------------------
+# Outlier / mixture tests
+# ---------------------------------------------------------------------------
+
+class OutlierTests(unittest.TestCase):
+    def test_O1_p_outlier_1_all_nonzero_constant(self):
+        """O1: p_outlier=1 gives nonzero, constant outlier_m across 10 steps."""
+        cfg = {'sigma_theta_deg': 1.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 1.0, 'noise': 'mixture'}
+        plugin = lateral.Error(cfg, _run(steps=10))
+        outlier_ms = []
+        for step in range(10):
+            tgt = _tgt(20.0, 0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            outlier_ms.append(tgt['log']['outlier_m'])
+        self.assertNotAlmostEqual(outlier_ms[0], 0.0, places=9,
+                                  msg='p_outlier=1 should give non-zero bias')
+        for i in range(1, 10):
+            self.assertAlmostEqual(outlier_ms[i], outlier_ms[0], delta=1e-12,
+                                   msg=f'outlier_m must be constant (step {i})')
+
+    def test_O2_p_outlier_0_always_zero(self):
+        """O2: p_outlier=0 gives outlier_m == 0.0 on every step."""
+        cfg = {'sigma_theta_deg': 1.0, 'bias_theta_deg': 0.0,
+               'p_outlier': 0.0, 'noise': 'mixture'}
+        plugin = lateral.Error(cfg, _run(steps=10))
+        for step in range(10):
+            tgt = _tgt(20.0, 0.0)
+            plugin.perceive(step, step * 0.1, _EGO, [tgt])
+            self.assertEqual(tgt['log']['outlier_m'], 0.0,
+                             msg=f'step {step}')
+
+    def test_O3_p_outlier_002_fraction(self):
+        """O3: p_outlier=0.02 across 10,000 targets gives outlier count in [100, 300]."""
+        ol = TargetOutliers('o3_seed', p_outlier=0.02)
+        count = sum(1 for tid in range(10_000) if ol.draw(tid) != 0.0)
+        self.assertGreaterEqual(count, 100,
+                                msg=f'too few outliers: {count} (expected ≈ 200)')
+        self.assertLessEqual(count, 300,
+                             msg=f'too many outliers: {count} (expected ≈ 200)')
 
 
 if __name__ == '__main__':

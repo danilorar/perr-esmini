@@ -19,8 +19,10 @@ OBSERVATION_FIELDS = ['time_s', 'object_id', 'object_name', 'observation_valid',
 METRIC_FIELDS = ['time_s', 'collision', 'minimum_distance_m', 'minimum_gap_m', 'ttc_s']
 # esmini log line: "[12.340] [info] LOG_VALUE:name:value" (optional [file::func::line] metadata).
 LOG_VALUE = re.compile(r'\[([0-9.]+)\] \[\w+\] (?:\[[^\]]*\] )?LOG_VALUE:(\w+):(\S+)')
-# First brake: first controller acceleration below this value.
+# First decel: any negative acceleration command.
 BRAKE_THRESHOLD_MPS2 = -0.01
+# First emergency brake: hard braking threshold (HiDrive exposes no AEB flag; we use decel).
+AEB_THRESHOLD_MPS2 = -4.0
 
 
 def read_perception_log(path):
@@ -107,6 +109,37 @@ def finite(value):
     return value if math.isfinite(value) else None
 
 
+def _perceived_ttc(record, true_gap, true_closing, ego_speed):
+    """Perceived TTC, using the speed-magnitude reconstruction from longitudinal_risk.
+
+    After velocity error, target['speed'] = |vr_obs|.  longitudinal_risk computes
+    closing = ego_speed − |vr_obs| × cos(heading_diff).  For a collinear target
+    (heading_diff ≈ 0):  closing_perceived ≈ ego_speed − |vr_true + vr_error|.
+    vr_true ≈ ego_speed − true_closing  (from the collinear approximation).
+    Returns (ttc_perceived, delta_ttc, outlier_r_mps) or (None, None, 0) if unavailable.
+    Sign of delta_ttc: positive = perceived TTC > true TTC = controller thinks it has more time.
+    """
+    if record is None or true_gap is None or true_closing is None or true_closing < 1e-3:
+        return None, None, 0.0
+    raw_range = float(record['raw_range_m'])
+    true_range_r = float(record['true_range_m'])
+    vr_error = float(record.get('velocity.vr_error_mps', 0.0))
+    outlier_r = float(record.get('velocity.outlier_r_mps', 0.0))
+    # Perceived gap: adjust range error proportionally.
+    perceived_gap = max(raw_range - (true_range_r - true_gap), 0.0)
+    # After velocity.py heading-flip fix: closing_perceived = closing_true − vr_error.
+    # Positive vr_error → target appears to close slower (later braking, positive ΔTTC).
+    # Negative vr_error → heading flipped → target appears to approach (earlier braking, negative ΔTTC).
+    # When vr_error ≥ closing_true the target appears to recede: perceived TTC undefined.
+    p_close = true_closing - vr_error
+    if p_close <= 0:
+        return None, None, outlier_r
+    perceived_closing = max(p_close, 1e-6)
+    ttc_perceived = perceived_gap / perceived_closing
+    ttc_true = max(true_gap, 0.0) / true_closing
+    return ttc_perceived, ttc_perceived - ttc_true, outlier_r
+
+
 class Tables:
     """The four result tables, written row by row."""
 
@@ -156,6 +189,9 @@ def collect(out, scenario, controller, injected):
     active_name, accel_name = controller.signals.get('active'), controller.signals.get('acceleration')
     errors, invalid = [], 0
     first_trigger = first_brake = stop_time = brake_range = collision = None
+    first_emergency_brake = None
+    brake_ttc_true = brake_ttc_perceived = brake_delta_ttc = brake_outlier_r = None
+    emgcy_ttc_true = emgcy_ttc_perceived = emgcy_delta_ttc = None
     min_range = min_gap = min_ttc = math.inf
     min_accel = 0.0
     with Tables(out) as writers:
@@ -169,19 +205,26 @@ def collect(out, scenario, controller, injected):
                     t, s['id'], s['name'], s['x'], s['y'], s['z'], s['h'], s['p'], s['speed'], s['vx'], s['vy'],
                     s['length'], s['width'], s['height'], s['centerOffsetX'], s['centerOffsetY'], s['centerOffsetZ']])))
             distances = {s['id']: math.dist(center(ego), center(s)) for s in targets}
-            gaps, ttcs = [], []
+            # Collect in-path data with perception record for ΔTTC at first brake.
+            in_path_data = []  # (gap, closing, name) for every in-path target
             for s in targets:
-                gap, closing, in_path = longitudinal_risk(ego, s)
-                if in_path:
-                    gaps.append(gap)
-                    if closing > 1e-3:
-                        ttcs.append(max(gap, 0.0) / closing)
+                gap_s, closing_s, in_path_s = longitudinal_risk(ego, s)
                 row, error, is_invalid = observation_row(t, s, ego, distances[s['id']], applied.get((t, s['name'])))
                 writers['observations'].writerow(row)
                 invalid += is_invalid
                 if error is not None:
                     errors.append(error)
+                if in_path_s:
+                    in_path_data.append((gap_s, closing_s, s['name']))
+            gaps = [g for g, _, _ in in_path_data]
+            ttcs = [max(g, 0.0) / c for g, c, _ in in_path_data if c > 1e-3]
             gap, ttc = min(gaps, default=None), min(ttcs, default=None)
+            # Identify the minimum-gap in-path target's perception record (for ΔTTC at brake moment).
+            if in_path_data:
+                frame_g, frame_c, frame_name = min(in_path_data, key=lambda x: x[0])
+                frame_record = applied.get((t, frame_name))
+            else:
+                frame_g = frame_c = frame_name = frame_record = None
             min_range = min(min_range, *distances.values())
             min_gap = min(min_gap, gap if gap is not None else math.inf)
             min_ttc = min(min_ttc, ttc if ttc is not None else math.inf)
@@ -199,6 +242,14 @@ def collect(out, scenario, controller, injected):
                 min_accel = min(min_accel, accel)
                 if accel < BRAKE_THRESHOLD_MPS2 and first_brake is None:
                     first_brake, brake_range = t, min(distances.values(), default=None)
+                    brake_ttc_true = ttc
+                    brake_ttc_perceived, brake_delta_ttc, brake_outlier_r = _perceived_ttc(
+                        frame_record, frame_g, frame_c, ego['speed'])
+                if accel < AEB_THRESHOLD_MPS2 and first_emergency_brake is None:
+                    first_emergency_brake = t
+                    emgcy_ttc_true = ttc
+                    emgcy_ttc_perceived, emgcy_delta_ttc, _ = _perceived_ttc(
+                        frame_record, frame_g, frame_c, ego['speed'])
             if first_brake is not None and ego['speed'] <= 1e-6 and stop_time is None:
                 stop_time = t
             if hit and collision is None:
@@ -212,7 +263,12 @@ def collect(out, scenario, controller, injected):
             if hit:
                 break
     return dict(collision=collision is not None, collision_details=collision, first_trigger_time_s=first_trigger,
-                first_brake_time_s=first_brake, true_center_range_at_brake_m=brake_range, stop_time_s=stop_time,
+                first_brake_time_s=first_brake, first_emergency_brake_time_s=first_emergency_brake,
+                true_center_range_at_brake_m=brake_range, stop_time_s=stop_time,
+                brake_ttc_true_s=brake_ttc_true, brake_ttc_perceived_s=brake_ttc_perceived,
+                brake_delta_ttc_s=brake_delta_ttc, brake_outlier_r_mps=brake_outlier_r,
+                emgcy_ttc_true_s=emgcy_ttc_true, emgcy_ttc_perceived_s=emgcy_ttc_perceived,
+                emgcy_delta_ttc_s=emgcy_delta_ttc,
                 final_speed_kph=ego['speed'] * 3.6, end_time_s=t, samples=index + 1,
                 end_reason='collision' if collision else 'scenario_stop', minimum_gap_m=finite(min_gap),
                 minimum_ttc_s=finite(min_ttc), minimum_acceleration_mps2=min_accel,

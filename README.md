@@ -133,7 +133,7 @@ plugin gets the result of the one before it, so the order matters. To use one ty
 | `identification` | in wrong-class frames: range + (wrong_scale - 1) * true range + wrong_bias; `size` skips those frames | `wrong_rate` (0), `wrong_mean_s` (0.5), `wrong_scale` (1.0), `wrong_bias_m` (0), `sensor_period_s` (0.05) |
 | `ou` | range + a correlated error that grows with distance, plus an optional constant bias with the same distance law | `mae_pct` (5.0, mean error at `reference_range_m`), `bias_pct` (0.0, > 0 reads too far), `correlation_time_s` (0.5), `zero_range_m` (3), `reference_range_m` (100) |
 | `detection` | in lost frames: no target, or a predicted range | `miss_rate` (0), `miss_model` (`markov` or `iid`), `miss_mean_s` (0.5), `sensor_period_s` (0.05), `lost_target` (`vanish` or `predict`), `lost_target_motion` (`live` or `frozen`), `lost_target_distance` (`frozen_difference` or `frozen_object`) |
-| `fitted` | range + a bias, an OU error and white noise per 0.1 s frame, and missed frames whose lengths are drawn from the log, all with the values `fit-kradar` fitted (see below); a missed frame is handled as in `detection` | `parameters` (`pipeline/kradar/parameters.json`), `profile` (a detector in that file, such as `asf`), `condition` (`all`, `range`, `normal`, `rain`, `fog` or `snow`), `range_error` (true), `misses` (true), `lost_target`, `lost_target_motion`, `lost_target_distance` (as in `detection`) |
+| `fitted` | range + a bias, an OU error and white noise per 0.1 s frame, and missed frames whose lengths are drawn from the log, all with the values `fit-kradar` fitted (see below); a missed frame is handled as in `detection` | `parameters` (`pipeline/kradar/parameters.json`), `profile` (a detector in that file, such as `asf`), `condition` (`all`, `range`, `normal`, `rain`, `fog` or `snow`), `offset` (`none`; `target`: each target keeps one offset for the whole run, drawn from the log's per-car mean errors, plus the spread around them), `range_error` (true), `misses` (true), `lost_target`, `lost_target_motion`, `lost_target_distance` (as in `detection`) |
 | `template` | range + white noise; a starting point for new plugins | `sigma_m` (0.0) |
 
 Put `identification` before `size`, and `detection` or `fitted` last, so the prediction starts from the range with all
@@ -196,7 +196,7 @@ AGENTS.md           rules for AI agents (CLAUDE.md loads it for Claude Code)
 
 Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`, `PerceptionModels.pdf`, `esmini`,
 `requirements.txt`. Created locally and not in Git: `runtime/` (compiled esmini), `output/` (results),
-`pipeline/scenarios/local/` (imported TASC cases).
+`pipeline/scenarios/imported/` (imported TASC + NCAP cases).
 
 ## Good to know
 
@@ -204,7 +204,7 @@ Not used by the pipeline, and left as they are on `main`: `OSC-NCAP-scenarios/`,
 - The teacher's TASC case folders (`Cut-in`, `Rear-end car-car`, `Rear-end car-cyclist`, each with `Xosc/` and `Xodr/`)
   are imported with `python -m pipeline import-tasc <folder>`. HiDrive is a forward AEB, so only cases where the ego's
   front hits the other road user are kept: 119 of 149, as `tasc_car_*` (98) and `tasc_cyclist_*` (21) in
-  `pipeline/scenarios/local/`, outside Git. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
+  `pipeline/scenarios/imported/`. Cases hit from behind, cut-ins, crossings and boxes that overlap from the
   start are skipped; see `docs/TASC_SCENARIOS.md`, and `import_report.csv` next to the cases for each file's reason.
   The cyclist files define the cyclist as a car; add `--bicycle` to also get `tasc_bicycle_*`, the same cases with a
   bicycle-sized box.

@@ -1,0 +1,2 @@
+{"scenario": "gidas_1549178", "controller": "alks", "seed": 1,
+ "errors": [{"type": "ou", "bias_pct": 30.0, "mae_pct": 0.0}]}

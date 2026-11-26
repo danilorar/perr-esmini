@@ -26,9 +26,11 @@ COMPRESS = {'ego.csv', 'observations.csv', 'metrics.csv', 'perception_applied.ts
 KEEP = {'config.json', 'summary.json', 'versions.json', 'error.log'}
 DONE = ('completed', 'completed_with_warnings')
 RESULT_FIELDS = ['status', 'collision', 'impact_speed_kph', 'relative_impact_speed_kph', 'first_trigger_time_s',
-                 'first_brake_time_s', 'true_center_range_at_brake_m', 'minimum_gap_m', 'minimum_ttc_s',
-                 'minimum_acceleration_mps2', 'final_speed_kph', 'end_time_s', 'invalid_range_observations',
-                 'observed_range_rmse_m']
+                 'first_brake_time_s', 'first_emergency_brake_time_s', 'true_center_range_at_brake_m',
+                 'brake_ttc_true_s', 'brake_ttc_perceived_s', 'brake_delta_ttc_s', 'brake_outlier_r_mps',
+                 'emgcy_ttc_true_s', 'emgcy_ttc_perceived_s', 'emgcy_delta_ttc_s',
+                 'minimum_gap_m', 'minimum_ttc_s', 'minimum_acceleration_mps2', 'final_speed_kph',
+                 'end_time_s', 'invalid_range_observations', 'observed_range_rmse_m']
 # Which code made each run: the commit, and how many files differed from it (0 = clean).
 CODE_FIELDS = ['commit', 'local_changes']
 
@@ -141,8 +143,12 @@ def result_row(job, out):
     versions = read_json(out / 'versions.json') if (out / 'versions.json').is_file() else {}
     code = versions.get('code') or {}
     changes = code.get('local_changes')
-    return {'run': job['name'], 'scenario': job['scenario'], 'group': job['group'], **job['levels'], 'seed': job['seed'],
+    kph = row.get('impact_speed_kph')
+    outlier_on = job['group'].endswith('_on')
+    return {'run': job['name'], 'scenario': job['scenario'], 'group': job['group'],
+            'outlier_on': outlier_on, **job['levels'], 'seed': job['seed'],
             **{key: row.get(key) for key in RESULT_FIELDS},
+            'impact_speed_mps': round(kph / 3.6, 3) if kph is not None else None,
             'commit': code.get('commit'), 'local_changes': None if changes is None else len(changes)}
 
 
@@ -191,7 +197,7 @@ def write_table(path, rows, fields):
 def write_results(jobs, folder, output):
     level_keys = list(dict.fromkeys(key for job in jobs for key in job['levels']))
     rows = [result_row(job, folder / job['name']) for job in jobs]
-    write_table(output / 'results.csv', rows, ['run', 'scenario', 'group', *level_keys, 'seed', *RESULT_FIELDS, *CODE_FIELDS])
+    write_table(output / 'results.csv', rows, ['run', 'scenario', 'group', 'outlier_on', *level_keys, 'seed', *RESULT_FIELDS, 'impact_speed_mps', *CODE_FIELDS])
     cells = {}
     for row in rows:
         cells.setdefault((row['scenario'], row['group'], *(row.get(key) for key in level_keys)), []).append(row)

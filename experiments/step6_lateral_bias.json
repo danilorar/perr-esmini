@@ -1,0 +1,32 @@
+{
+  "name": "step6_lateral_bias",
+  "description": "Deterministic lateral offset test: fixed bias_m in {0, 0.5, 1, 2, 3} m, no noise. Reports time-of-first-brake and min gap to test whether lateral displacement can delay HiDrive braking.",
+  "scenarios": ["ncap_ccrs_50", "ncap_cbna_50"],
+  "groups": [
+    {
+      "name": "bias_0m",
+      "set": {"errors": [{"type": "lateral", "noise": "gaussian", "sigma_theta_deg": 0.0, "bias_theta_deg": 0.0, "bias_m": 0.0, "p_outlier": 0.0}]},
+      "seeds": [1]
+    },
+    {
+      "name": "bias_0.5m",
+      "set": {"errors": [{"type": "lateral", "noise": "gaussian", "sigma_theta_deg": 0.0, "bias_theta_deg": 0.0, "bias_m": 0.5, "p_outlier": 0.0}]},
+      "seeds": [1]
+    },
+    {
+      "name": "bias_1m",
+      "set": {"errors": [{"type": "lateral", "noise": "gaussian", "sigma_theta_deg": 0.0, "bias_theta_deg": 0.0, "bias_m": 1.0, "p_outlier": 0.0}]},
+      "seeds": [1]
+    },
+    {
+      "name": "bias_2m",
+      "set": {"errors": [{"type": "lateral", "noise": "gaussian", "sigma_theta_deg": 0.0, "bias_theta_deg": 0.0, "bias_m": 2.0, "p_outlier": 0.0}]},
+      "seeds": [1]
+    },
+    {
+      "name": "bias_3m",
+      "set": {"errors": [{"type": "lateral", "noise": "gaussian", "sigma_theta_deg": 0.0, "bias_theta_deg": 0.0, "bias_m": 3.0, "p_outlier": 0.0}]},
+      "seeds": [1]
+    }
+  ]
+}

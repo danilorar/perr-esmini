@@ -8,14 +8,23 @@ r is the true range. bias_pct > 0 reads the target too far, < 0 too near; it fol
 mae_pct = bias_pct gives a random and a constant error of the same mean size. With a bias, mae_pct is the size of the
 random part only. The distance law and correlation time are assumptions for sensitivity studies, not
 calibrated sensor values.
+
+noise='mixture': in addition to the per-frame OU noise, each target draws a persistent whole-track z-score once,
+then each step the outlier offset is z * 5 * sigma(r_current). Using the current range means the outlier scales
+with the same distance law as the OU noise (not fixed at reference_range_m). With p_outlier=1 and 10% MAE at
+30 m the typical |outlier| is a few metres; at the reference range it matches the K-Radar fitted offset.
 """
 import math
 import random
 
-SETTINGS = {'mae_pct': 5.0, 'bias_pct': 0.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0, 'reference_range_m': 100.0}
+from pipeline.errors.outliers import TargetOutliers
+
+SETTINGS = {'mae_pct': 5.0, 'bias_pct': 0.0, 'correlation_time_s': 0.5, 'zero_range_m': 3.0,
+            'reference_range_m': 100.0, 'p_outlier': 0.02, 'noise': 'gaussian'}
 RANGES = {'mae_pct': (0, 100), 'bias_pct': (-100, 100), 'correlation_time_s': (0.01, 20), 'zero_range_m': (0, 499),
-          'reference_range_m': (1, 500)}
-LOG = ('z', 'sigma_m', 'error_m')
+          'reference_range_m': (1, 500), 'p_outlier': (0.0, 1.0)}
+CHOICES = {'noise': ('gaussian', 'mixture')}
+LOG = ('z', 'sigma_m', 'error_m', 'outlier_m')
 SIGMA_PER_MAE = math.sqrt(math.pi / 2.0)
 
 
@@ -67,6 +76,14 @@ class Error:
         self.z = {target['name']: unit_samples(run.seed, settings['correlation_time_s'], target['id'], run.dt_s, run.steps)
                   for target in run.targets}
 
+        # Mixture: per-target z-score drawn once; outlier_m = z * 5 * sigma(r_current) in perceive().
+        # Using current range (not reference) so outlier scales with the distance law.
+        if settings.get('noise', 'gaussian') == 'mixture':
+            ol = TargetOutliers(f'{run.seed}:{run.label}:range', settings.get('p_outlier', 0.02))
+            self._outlier_z = {target['id']: ol.draw(target['id']) for target in run.targets}
+        else:
+            self._outlier_z = {}
+
     def perceive(self, step, t, ego, targets):
         for target in targets:
             r = target['true_range']
@@ -76,8 +93,13 @@ class Error:
             error = sigma * z
             if self.bias:  # skipped at 0, so runs without a bias stay identical to the ones before bias_pct existed
                 error = self.reference * self.bias / 100.0 * max(0.0, r - self.zero) / (self.reference - self.zero) + error
-            target['range'] = target['range'] + error
-            target['log'].update(z=z, sigma_m=sigma, error_m=error)
+            outlier_m = self._outlier_z.get(target['id'], 0.0) * 5.0 * sigma
+            # Clamp to 0.1 m: a large negative outlier must not make the target disappear
+            # (negative range hides it in Chain.flags); instead the target appears very close
+            # and the controller emergency-brakes. Without the clamp, 5×sigma outliers at
+            # large initial ranges (sigma≈8m at 10% MAE, 70m) produced range < 0 → valid=0.
+            target['range'] = max(0.1, target['range'] + error + outlier_m)
+            target['log'].update(z=z, sigma_m=sigma, error_m=error, outlier_m=outlier_m)
 
     def describe(self):
         return {'transition': 'z_next = exp(-dt/tau) * z + sqrt(1 - exp(-2*dt/tau)) * N(0,1), from N(0,1), one stream per object',

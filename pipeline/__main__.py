@@ -53,12 +53,22 @@ def command_import_tasc(args):
     print(f'{len(done)} of {len(rows)} imported into {scenarios.LOCAL}; report: import_report.csv there.')
 
 
+def command_import_ncap(_):
+    from .scenarios.ncap import import_ncap
+    import_ncap()
+
+
 def command_fit_kradar(args):
     from .fit_kradar import compare_with_shared, run
     summary = run(args.data, args.meta, args.detectors, args.output or OUTPUT / 'kradar' / 'fit',
                   check=not args.other_data)
     print(f'Parameters and checks in {summary.parent}; read {summary.name} first.')
     print(compare_with_shared(summary.parent / 'parameters.json'))
+
+
+def command_analyze_grid(args):
+    from .analyze_grid import analyze
+    analyze(args.grid, csv_out=args.csv, no_split=args.no_split)
 
 
 def command_replay(args):
@@ -96,6 +106,8 @@ def main():
 
     commands.add_parser('list', help='show controllers, error plugins and scenarios').set_defaults(function=command_list)
 
+    commands.add_parser('import-ncap', help='import NCAP CA-FC 2026 single-execution scenarios into local/').set_defaults(function=command_import_ncap)
+
     tasc = commands.add_parser('import-tasc', help='convert TASC case folders into local scenarios (not in Git)')
     tasc.add_argument('folder', help='folder with "Cut-in", "Rear-end car-car" and/or "Rear-end car-cyclist"')
     tasc.add_argument('--bicycle', action='store_true',
@@ -110,6 +122,12 @@ def main():
     fit.add_argument('--other-data', action='store_true',
                      help='fit tables that differ from the sha256 sums in pipeline/kradar/tables.sha256')
     fit.set_defaults(function=command_fit_kradar)
+
+    analyze = commands.add_parser('analyze-grid', help='summarise a grid: gap, brake delay, ΔTTC, crash rate per group')
+    analyze.add_argument('grid', help='grid output folder (contains runs/)')
+    analyze.add_argument('--csv', help='write table to this CSV file')
+    analyze.add_argument('--no-split', action='store_true', help='pool velocity_on + and − instead of splitting by outlier sign')
+    analyze.set_defaults(function=command_analyze_grid)
 
     replay = commands.add_parser('replay', help='watch a finished single run in the esmini replayer')
     replay.add_argument('run', help='results folder of the run')

@@ -1,0 +1,121 @@
+{
+  "name": "step6_ccr_vel2",
+  "description": "Velocity-only rerun of step6_ccr after vector velocity fix.",
+  "scenarios": [
+    "ncap_ccrs_50",
+    "ncap_ccrb_50",
+    "ncap_ccrm_50",
+    "tasc_car_1549178",
+    "tasc_car_1554254"
+  ],
+  "groups": [
+    {
+      "name": "velocity_off_low",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.25,
+            "sigma_tangential_mps": 1.0,
+            "noise": "mixture",
+            "p_outlier": 0
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 10
+      }
+    },
+    {
+      "name": "velocity_off_mid",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.5,
+            "sigma_tangential_mps": 2.0,
+            "noise": "mixture",
+            "p_outlier": 0
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 10
+      }
+    },
+    {
+      "name": "velocity_off_high",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 1.0,
+            "sigma_tangential_mps": 4.0,
+            "noise": "mixture",
+            "p_outlier": 0
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 10
+      }
+    },
+    {
+      "name": "velocity_on_low",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.25,
+            "sigma_tangential_mps": 1.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 50
+      }
+    },
+    {
+      "name": "velocity_on_mid",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.5,
+            "sigma_tangential_mps": 2.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 50
+      }
+    },
+    {
+      "name": "velocity_on_high",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 1.0,
+            "sigma_tangential_mps": 4.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "seeds": {
+        "first": 1,
+        "count": 50
+      }
+    }
+  ]
+}

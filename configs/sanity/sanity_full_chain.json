@@ -1,0 +1,15 @@
+{
+  "scenario": "ncap_ccrs_50",
+  "controller": "hidrive",
+  "seed": 1,
+  "errors": [
+    {"type": "detection",      "miss_rate": 0.1},
+    {"type": "ou",             "bias_pct": 10.0, "mae_pct": 5.0},
+    {"type": "lateral",        "sigma_theta_deg": 2.0, "bias_theta_deg": 0.0},
+    {"type": "velocity",       "sigma_radial_mps": 0.5, "bias_radial_mps": 0.0},
+    {"type": "box",            "length_scale": 0.9, "width_scale": 0.9},
+    {"type": "identification", "wrong_rate": 0.05},
+    {"type": "size",           "scale": 0.8, "bias_m": 0.0},
+    {"type": "template"}
+  ]
+}

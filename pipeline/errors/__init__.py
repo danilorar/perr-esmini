@@ -141,6 +141,9 @@ class Chain:
         self.log = Path(log_path).open('w', encoding='utf-8', newline='')
         self.writer = csv.writer(self.log, delimiter='\t', lineterminator='\n')
         self.writer.writerow(LOG_FIELDS + self.columns)
+        # Last noisy range per target: used by detection to compute p(miss) from
+        # the sensor's estimated range rather than the true range (t=0 fallback: true_range).
+        self._last_noisy = {}
 
     def describe(self):
         return [{'plugin': name, **(plugin.describe() if hasattr(plugin, 'describe') else {})} for name, plugin in self.plugins]
@@ -171,12 +174,17 @@ class Chain:
         if step >= self.steps:
             raise RuntimeError(f'The run is longer than its error samples (t={t} s).')
         notes = [{} for _ in targets]
+        for target in targets:
+            target['last_noisy_range'] = self._last_noisy.get(target['name'], target['true_range'])
         for name, plugin in self.plugins:
             for target in targets:
                 target['log'] = {}
             plugin.perceive(step, t, dict(ego), targets)
             for target, note in zip(targets, notes):
                 note.update({f'{name}.{key}': value for key, value in target['log'].items()})
+        for target in targets:
+            if target['seen']:
+                self._last_noisy[target['name']] = target['range']
         reply = [PREFIX, b'R']
         for target, note in zip(targets, notes):
             reply += self.encode(target)

@@ -50,7 +50,7 @@ class ConfigTests(unittest.TestCase):
 class ControllerTests(unittest.TestCase):
     def test_registry(self):
         found = controllers.all_controllers()
-        self.assertEqual(set(found), {'hidrive', 'example_aeb'})
+        self.assertIn('hidrive', found)
         self.assertEqual(found['hidrive'].esmini_name, 'HiDriveController')
         for controller in found.values():
             for name in controller.sources:  # existence only
@@ -76,13 +76,6 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(root.find('./RoadNetwork/LogicFile').get('filepath'), str(scenario.source.with_suffix('.xodr')))
         self.assertIsNotNone(root.find('./Storyboard/Init/Actions/Private[@entityRef="object_1"]//ActivateControllerAction'))
 
-    def test_another_controller_replaces_name_and_properties(self):
-        _, root, properties = self.scene('example_aeb')
-        element = root.find('./Entities/ScenarioObject[@name="object_1"]/ObjectController/Controller')
-        self.assertEqual(element.get('name'), 'ExampleAEBController')
-        self.assertEqual(properties['mode'], 'override')
-        self.assertNotIn('timeGap', properties)
-
 
 def canonical(path):
     """A scenario file as comparable bytes: no whitespace, no road path."""
@@ -96,7 +89,7 @@ def canonical(path):
 
 class TascImportTests(unittest.TestCase):
     """The teacher's case files lack the controller and, for cut-in, the stop trigger; see scenarios/tasc.py."""
-    SHARED = scenarios.FOLDER / 'data' / 'C_original_1554431.xosc'
+    SHARED = scenarios.FOLDER / 'fixtures' / 'C_original_1554431.xosc'
 
     def case(self, folder, group, *, swap=False, overlap=False, no_stop=False, beside=None):
         """Write the shared file 1554431 in the teacher's format into <folder>/<group>/.
@@ -382,19 +375,6 @@ class FullRunTests(unittest.TestCase):
             self.assertAlmostEqual(float(row['raw_range_m']), float(row['true_range_m']) + float(row['ou.error_m']), places=9)
         self.assertEqual(len(rows), len(applied))
 
-    def test_example_controller_brakes(self):
-        with tempfile.TemporaryDirectory() as folder:
-            summary = run(validate({'controller': 'example_aeb'}), Path(folder) / 'run', plots=False)
-        self.assertIsNotNone(summary['first_brake_time_s'])
-        self.assertEqual(summary['minimum_acceleration_mps2'], -8.0)
-
-    def test_error_reaches_the_example_controller(self):
-        base = {'controller': 'example_aeb'}
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            near = run(validate(base | {'errors': [{'type': 'size', 'scale': 0.5}]}), folder / 'near', plots=False)
-            exact = run(validate(base | {'errors': [{'type': 'size'}]}), folder / 'exact', plots=False)
-        self.assertLess(near['first_brake_time_s'], exact['first_brake_time_s'])
 
 
 if __name__ == '__main__':

@@ -19,9 +19,12 @@ class Controller:
     type_enum: str     # added to esmini's Controller::Type; empty if the controller needs none
     properties: dict   # scene <Properties>; None keeps the ones already in the scenario file
     signals: dict      # LOG_VALUE names: 'active' (1 while intervening) and 'acceleration'
+    native: bool = False  # True when the controller is built into esmini (no source files needed)
 
     def source_metadata(self):
-        """Size and modification time only."""
+        """Size and modification time only. Empty for native controllers (no source files)."""
+        if self.native:
+            return {}
         return {name: {'size': (self.folder / name).stat().st_size,
                        'mtime_ns': (self.folder / name).stat().st_mtime_ns}
                 for name in self.sources}
@@ -36,7 +39,7 @@ def all_controllers():
             key=path.parent.name, folder=path.parent, esmini_name=data['esmini_name'],
             sources=tuple(data['sources']), header=data['header'], factory=data['factory'],
             type_enum=data.get('type_enum', ''), properties=data.get('properties'),
-            signals=data.get('signals', {}))
+            signals=data.get('signals', {}), native=bool(data.get('native', False)))
     return found
 
 

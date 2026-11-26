@@ -1,0 +1,84 @@
+{
+  "name": "step6_ccr_vel3",
+  "description": "CCR velocity sensitivity — radial-only and tangential-only, sigma = 0.25/0.5/1.0 m/s. Realistic sigma_t matching sigma_r levels.",
+  "scenarios": [
+    "ncap_ccrs_50",
+    "ncap_ccrb_50",
+    "ncap_ccrm_50",
+    "tasc_car_1549178",
+    "tasc_car_1554254"
+  ],
+  "base": {
+    "controller": "hidrive",
+    "errors": []
+  },
+  "groups": [
+    {
+      "name": "baseline",
+      "set": { "errors": [] },
+      "seeds": { "first": 1, "count": 1 }
+    },
+    {
+      "name": "velocity_radial_off",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_tangential_mps": 0.0,
+            "noise": "gaussian",
+            "p_outlier": 0
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_radial_mps": [0.25, 0.5, 1.0] },
+      "seeds": { "first": 1, "count": 10 }
+    },
+    {
+      "name": "velocity_radial_on",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_tangential_mps": 0.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_radial_mps": [0.25, 0.5, 1.0] },
+      "seeds": { "first": 1, "count": 50 }
+    },
+    {
+      "name": "velocity_tangential_off",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.0,
+            "bias_radial_mps": 0.0,
+            "noise": "gaussian",
+            "p_outlier": 0
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_tangential_mps": [0.25, 0.5, 1.0] },
+      "seeds": { "first": 1, "count": 10 }
+    },
+    {
+      "name": "velocity_tangential_on",
+      "set": {
+        "errors": [
+          {
+            "type": "velocity",
+            "sigma_radial_mps": 0.0,
+            "bias_radial_mps": 0.0,
+            "noise": "mixture",
+            "p_outlier": 1
+          }
+        ]
+      },
+      "vary": { "errors.velocity.sigma_tangential_mps": [0.25, 0.5, 1.0] },
+      "seeds": { "first": 1, "count": 50 }
+    }
+  ]
+}

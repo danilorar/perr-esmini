@@ -17,6 +17,15 @@ looked up every frame; below or above the bands, the nearest band) or a weather 
 tau and how the spread splits into OU and white always come from the "all" row; the chosen row gives b, the spread and
 p_miss. The miss runs are pooled over all rows.
 
+offset "none" is the model above. offset "target" gives each target one whole-run offset instead of b, drawn from the
+mean errors of the log's lead tracks (target_offset in the file, pooled over all rows), plus OU and white noise with
+the spread around each track's mean (per row as above) and the tau of that rest:
+
+    range += offset + sigma_ou' * z + sigma_white' * w
+
+The log's errors are a narrow spread plus a few targets read too far for their whole track (ASF: one car 2.3 m too far
+down to 11 m); one Gaussian with the pooled spread is wider in the middle and almost never gives such a target.
+
 A missed frame is handled by the detection plugin's code with lost_target, lost_target_motion and
 lost_target_distance, after the range error, so the remembered range includes it. Put this plugin last, as detection,
 and do not stack it with ou or detection. range_error and misses switch the two parts on and off; each has its own
@@ -31,12 +40,13 @@ import random
 from . import detection
 
 ROOT = Path(__file__).resolve().parents[2]
-SETTINGS = {'parameters': 'pipeline/kradar/parameters.json', 'profile': '', 'condition': 'all',
+SETTINGS = {'parameters': 'pipeline/kradar/parameters.json', 'profile': '', 'condition': 'all', 'offset': 'none',
             'range_error': True, 'misses': True, 'lost_target': 'vanish', 'lost_target_motion': 'live',
             'lost_target_distance': 'frozen_difference'}
 LOST = ('lost_target', 'lost_target_motion', 'lost_target_distance')
-CHOICES = {'condition': ('all', 'range', 'normal', 'rain', 'fog', 'snow'), **{key: detection.CHOICES[key] for key in LOST}}
-LOG = ('bias_m', 'sigma_ou_m', 'sigma_white_m', 'z', 'w', 'error_m', 'missed')
+CHOICES = {'condition': ('all', 'range', 'normal', 'rain', 'fog', 'snow'), 'offset': ('none', 'target'),
+           **{key: detection.CHOICES[key] for key in LOST}}
+LOG = ('bias_m', 'offset_m', 'sigma_ou_m', 'sigma_white_m', 'z', 'w', 'error_m', 'missed')
 
 
 def parameter_path(settings):
@@ -72,6 +82,12 @@ def load(settings):
         chosen.sort(key=lambda item: item[0])
     else:
         chosen = [(-math.inf, math.inf, cells.get(f'weather {condition}'))]
+    tau, offsets = shape['tau_s'], []
+    if settings['offset'] == 'target':
+        target = profile.get('target_offset')
+        if not target or not target['offsets_m']:
+            raise ValueError(f'{path}: profile {settings["profile"]} has no target_offset; rerun fit-kradar')
+        tau, share_ou, offsets = target['tau_s'], target['share_ou'], target['offsets_m']
     rows = []
     for low, high, cell in chosen:
         if cell is None or any(not math.isfinite(cell[key]) for key in ('b_m', 'sd_m', 'p_miss')):
@@ -80,10 +96,16 @@ def load(settings):
         enter = p / ((1.0 - p) * mean_run) if p < 1 else 1.0
         if enter > 1:
             raise ValueError(f'{path}: p_miss {p} with a mean miss run of {mean_run} frames needs enter > 1')
-        rows.append((low, high, {'cell': cell['cell'], 'b_m': cell['b_m'], 'p_miss': p, 'enter': enter,
-                                 'sigma_ou_m': cell['sd_m'] * math.sqrt(share_ou),
-                                 'sigma_white_m': cell['sd_m'] * math.sqrt(1.0 - share_ou)}))
-    return {'path': path, 'rows': rows, 'tau_s': shape['tau_s'], 'share_ou': share_ou, 'runs': runs,
+        b, sd = cell['b_m'], cell['sd_m']
+        if offsets:
+            rest = target['residual'].get(cell['cell'])
+            if rest is None:
+                raise ValueError(f'{path}: profile {settings["profile"]} has no target_offset row {cell["cell"]}')
+            b, sd = 0.0, rest['sd_m']
+        rows.append((low, high, {'cell': cell['cell'], 'b_m': b, 'p_miss': p, 'enter': enter,
+                                 'sigma_ou_m': sd * math.sqrt(share_ou),
+                                 'sigma_white_m': sd * math.sqrt(1.0 - share_ou)}))
+    return {'path': path, 'rows': rows, 'tau_s': tau, 'share_ou': share_ou, 'runs': runs, 'offsets': offsets,
             'mean_run': mean_run, 'period_s': profile['frame_period_s']}
 
 
@@ -107,8 +129,11 @@ class Error:
         self.per_frame = round(self.fit['period_s'] / run.dt_s)
         frames = run.steps // self.per_frame + 1
         rho = math.exp(-self.fit['period_s'] / self.fit['tau_s'])
-        self.z, self.w, self.miss = {}, {}, {}
+        self.z, self.w, self.miss, self.offset = {}, {}, {}, {}
         for target in run.targets:
+            if self.fit['offsets']:
+                draw = random.Random(f'{run.seed}:{run.label}:{target["id"]}:offset')
+                self.offset[target['name']] = draw.choice(self.fit['offsets'])
             stream = random.Random(f'{run.seed}:{run.label}:{target["id"]}:range')
             z = [stream.gauss(0.0, 1.0)]
             for _ in range(1, frames):
@@ -149,9 +174,10 @@ class Error:
             row = self.row(target['true_range'])
             if self.settings['range_error']:
                 z, w = self.z[name][frame], self.w[name][frame]
-                error = row['b_m'] + row['sigma_ou_m'] * z + row['sigma_white_m'] * w
+                offset = self.offset.get(name, 0.0)
+                error = row['b_m'] + offset + row['sigma_ou_m'] * z + row['sigma_white_m'] * w
                 target['range'] += error
-                target['log'].update(bias_m=row['b_m'], sigma_ou_m=row['sigma_ou_m'],
+                target['log'].update(bias_m=row['b_m'], offset_m=offset, sigma_ou_m=row['sigma_ou_m'],
                                      sigma_white_m=row['sigma_white_m'], z=z, w=w, error_m=error)
             if self.detection is not None:
                 state = self.miss[name]
@@ -165,6 +191,7 @@ class Error:
         digest = hashlib.sha256(self.fit['path'].read_bytes()).hexdigest()[:12]
         return {'calibration': 'Fitted from a paired log (python -m pipeline fit-kradar), not assumed values.',
                 'parameters_sha256': digest, 'tau_s': self.fit['tau_s'], 'share_ou': self.fit['share_ou'],
+                'target_offsets_m': {name: offset for name, offset in self.offset.items()},
                 'mean_miss_run_frames': self.fit['mean_run'], 'frame_period_s': self.fit['period_s'],
                 'rows': [{'low_m': low if math.isfinite(low) else None, 'high_m': high if math.isfinite(high) else None,
                           **row} for low, high, row in self.fit['rows']],

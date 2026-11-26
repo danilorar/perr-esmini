@@ -18,5 +18,17 @@ esmini-demo/*
 # Pipeline: compiled esmini and results stay local
 runtime/
 output/
-# Scenarios imported with import-tasc stay local (teacher data)
-pipeline/scenarios/local/
+# Raw TASC data (teacher data, never commit)
+data/Rear-end car-car/
+data/Rear-end car-cyclist/
+
+# Scenarios imported with import-tasc stay local (teacher data); NCAP scenarios are tracked
+pipeline/scenarios/imported/tasc_*
+pipeline/scenarios/imported/gidas_*
+pipeline/scenarios/imported/import_report.csv
+pipeline/scenarios/imported/scenarios.json
+
+# Archive 
+archive/**
+
+

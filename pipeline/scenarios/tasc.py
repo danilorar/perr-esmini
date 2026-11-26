@@ -1,7 +1,7 @@
 """Import the teacher's TASC case folders as local scenarios: python -m pipeline import-tasc <folder>
 
 <folder> holds group folders such as "Rear-end car-car", each with Xosc/ and Xodr/. The files are not in Git: the
-converted copies go to pipeline/scenarios/local/ (ignored), listed in local/scenarios.json with keys like
+converted copies go to pipeline/scenarios/imported/, listed in imported/scenarios.json with keys like
 tasc_car_1549178. Grids pick them with patterns: "scenarios": ["tasc_car_*"].
 
 The case files lack what a pipeline scenario needs, so each file gets:
