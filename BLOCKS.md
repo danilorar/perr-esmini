@@ -57,7 +57,13 @@ For each valid controller–scenario combination in the assignment table above, 
 ---
 
 ## Block 4 — Experiment grids
-_Depends on Blocks 2 + 3._
+_Depends on Blocks 2 + 3. **On hold** — do not start until both items below are resolved._
+
+### Waiting on
+- **April** — K-Radar fitting for detection (and possibly identification). Result goes into
+  `pipeline/kradar/parameters.json` and must be usable via `{"type": "fitted", "profile": "..."}`.
+  Block 4 runs the full grid in one shot (assumed + fitted together), so this must be ready first.
+- **Aron** — TBD. Update this line once confirmed.
 
 ### 4a — CCR grid
 
