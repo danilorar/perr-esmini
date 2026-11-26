@@ -48,7 +48,7 @@ class SharedKradarFilesTest(unittest.TestCase):
                           'candidates/kradar_pvrcnn.parquet', 'reference/kradar_P3.parquet'])
         for name in ('train.txt', 'test.txt', 'sequences.csv'):
             self.assertTrue((fit_kradar.KRADAR / 'meta' / name).is_file(), name)
-        for profile in ('asf', 'pvrcnn'):
+        for profile in ('asf', 'pvrcnn', 'l4dr'):
             fit = fitted.load({**fitted.SETTINGS, 'profile': profile, 'condition': 'range'})
             self.assertEqual(len(fit['rows']), 3)
 

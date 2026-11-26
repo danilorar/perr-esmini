@@ -156,7 +156,8 @@ does not allow sharing changed versions of the data; the teacher's tables are on
 need instead: the fitted values (`parameters.json`, numbers only), K-Radar's train/test split and the sha256 of each
 table. So the `fitted` plugin works without the tables.
 
-To redo the fit, get the four tables from the teacher and run:
+To redo the fit, get the four tables from the teacher (detector tables: the corrected set of 2026-11-25) and
+run:
 
 ```bash
 pip install pandas pyarrow
