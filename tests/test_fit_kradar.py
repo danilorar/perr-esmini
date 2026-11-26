@@ -98,6 +98,45 @@ class FitKradarTest(unittest.TestCase):
         self.assertAlmostEqual(fit['p_miss'], p_miss, delta=0.015)
         self.assertAlmostEqual(fit['t_miss_s'], t_miss, delta=0.04)
 
+    def test_duplicates_keep_the_most_confident_box(self):
+        det = pd.DataFrame({'recording_id': 'R', 'frame_idx': [0, 0, 0, 0, 1],
+                            'class_name': ['Sedan', 'Sedan', 'BusOrTruck', 'Sedan', 'Sedan'],
+                            'x': [10.0, 10.5, 10.2, 20.0, 10.0], 'y': 0.0, 'confidence': [0.5, 0.9, 0.4, 0.3, 0.6]})
+        kept, dropped = fit_kradar.drop_duplicates(det)
+        self.assertEqual(dropped, 1)                              # the 0.5 Sedan, 0.5 m from the 0.9 one
+        self.assertEqual(sorted(kept.confidence.tolist()), [0.3, 0.4, 0.6, 0.9])
+
+    def test_reference_suspects_are_what_every_detector_shows(self):
+        rng = np.random.default_rng(3)
+        offsets = {f'T{k}': 0.1 * rng.normal() for k in range(30)}
+        offsets['T0'] = 1.5                                       # every detector reads it 1.5 m too far
+        leads = {}
+        for detector, own in (('a', 0.0), ('b', 0.05)):
+            rows = [(f'R{k % 5}', track, frame, True, offset + own + 0.05 * rng.normal())
+                    for k, (track, offset) in enumerate(offsets.items()) for frame in range(30)]
+            leads[detector] = pd.DataFrame(rows, columns=['recording_id', 'track_id', 'frame_idx', 'hit', 'error_m'])
+        lags = pd.DataFrame({'a': [-3.0, 2.0, 0.0, 0.0], 'b': [-2.0, -2.0, 0.0, 0.0]},
+                            index=['R1', 'R2', 'R3', 'all'])
+        suspects = fit_kradar.reference_suspects(leads, lags)
+        self.assertEqual(suspects['recordings'], ['R1'])          # R2: off both ways
+        self.assertEqual(suspects['tracks'], ['T0'])
+        kept = fit_kradar.drop_suspects(leads['a'], suspects)
+        self.assertFalse(kept.recording_id.eq('R1').any() or kept.track_id.eq('T0').any())
+
+    def test_error_split_separates_the_shared_part(self):
+        rng = np.random.default_rng(4)
+        n = 20000
+        shared = 0.2 * rng.normal(size=n)
+        leads = {}
+        for detector, own in (('a', 0.1), ('b', 0.15), ('c', 0.05)):
+            leads[detector] = pd.DataFrame({'track_id': [f'T{k // 100}' for k in range(n)], 'frame_idx': np.arange(n),
+                                            'hit': True, 'error_m': shared + own * rng.normal(size=n),
+                                            'range_m': 30.0})
+        split = fit_kradar.error_split(leads)
+        for detector, own in (('a', 0.1), ('b', 0.15), ('c', 0.05)):
+            self.assertAlmostEqual(split[detector]['all']['shared_sd_m'], 0.2, delta=0.01)
+            self.assertAlmostEqual(split[detector]['all']['own_sd_m'], own, delta=0.015)
+
     def test_target_offsets_are_track_means_and_the_rest_is_the_spread_around_them(self):
         rng = np.random.default_rng(2)
         offsets = {'T0': -1.0, 'T1': 0.0, 'T2': 2.5}

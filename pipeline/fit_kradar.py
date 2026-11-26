@@ -1,19 +1,20 @@
 """Fit error-model parameters from K-Radar: reference boxes against detector boxes, on test frames only.
 
-    python -m pipeline fit-kradar <data folder> [--meta <folder>] [--detectors asf pvrcnn] [--output <folder>]
+    python -m pipeline fit-kradar <data folder> [--meta <folder>] [--detectors asf pvrcnn l4dr] [--output <folder>]
                                   [--other-data]
 
 <data folder>: reference/kradar_P3.parquet and candidates/kradar_<detector>.parquet (the teacher's tables, not in Git:
-K-Radar licence). Each table must match its sha256 in pipeline/kradar/tables.sha256, so everyone fits the same data;
---other-data skips that check.
+K-Radar licence; the detector tables are the corrected set of 2026-11-25). Each table must match its sha256 in
+pipeline/kradar/tables.sha256, so everyone fits the same data; --other-data skips that check.
 <meta folder>: default pipeline/kradar/meta. K-Radar's split lists train.txt and test.txt (github.com/kaist-avelab/K-Radar,
 resources/split) and sequences.csv (sequence, road_type, time, weather, frames), Table 5 of the K-Radar paper
 (arXiv 2206.08171).
 Needs pandas and pyarrow on top of pipeline/requirements.txt. At the end the new parameters.json is compared with
 pipeline/kradar/parameters.json, the shared fit that the fitted plugin reads by default.
 
-Every detector box is paired with at most one reference box of the same frame: nearest centres first, at most GATE_M
-apart. The lead is the nearest reference vehicle ahead in the ego lane (|y| < LANE_M); its rows count when it is a
+Of a detector's boxes of the same class in the same frame closer than DUPLICATE_M, only the most confident is kept (L4DR
+gives many such pairs, ASF and PV-RCNN++ none). Every detector box is paired with at most one reference box of the same
+frame: nearest centres first, at most GATE_M apart. The lead is the nearest reference vehicle ahead in the ego lane (|y| < LANE_M); its rows count when it is a
 Sedan. The model for the lead, in metres:
 
     range error e(t) = b + sigma_ou * z(t) + sigma_white * w(t)
@@ -34,7 +35,16 @@ by the end of a track or of a block of test frames counts with the length seen, 
 It also lists each lead track's mean error and the spread around it (target_offset), for the plugin's offset "target":
 the log is a narrow spread plus a few targets read too far for their whole track, which one Gaussian does not give.
 
-Check: fit on half of the recordings of each weather group (A) and compare with the other half (B).
+Checks on the data, before the fit (they need two or more detectors):
+- Timing: per recording and detector, the frame lag that pairs best (smallest median |error| of the lead).
+- Reference: what every detector shows alike is taken as a fault of the reference, not of the detectors. A recording
+  is left out when every detector's best lag is TIMING_LAG frames or more off zero, the same way; a lead track is left
+  out when its offset shared by the detectors is an outlier among the tracks (modified z-score above SUSPECT_Z). The
+  rows left out are the same for every detector.
+- Shared part: on frames where every detector has the lead, the covariance between detectors is the part of the error
+  they share (reference error, or an error all of them make); the rest is each detector's own.
+
+Check after the fit: fit on half of the recordings of each weather group (A) and compare with the other half (B).
 """
 from pathlib import Path
 import hashlib
@@ -57,10 +67,13 @@ LONG_TRACK = 20
 CLASSES = ('Sedan', 'BusOrTruck')
 WEATHER_GROUP = {'normal': 'normal', 'overcast': 'normal', 'rain': 'rain', 'sleet': 'rain', 'fog': 'fog',
                  'light snow': 'snow', 'heavy snow': 'snow'}
-# Added to a detector's x and y. PV-RCNN++ boxes sit 2.55 m behind and 0.31 m left of the reference: median over
-# pairs beyond 20 m, the same in every range band and with no rotation, so a shift between two sensor frames (the
-# data's README names only the 0.7 m in z, which this fit does not use).
-FRAME_SHIFT_M = {'pvrcnn': (2.55, -0.31)}
+# The first detector tables (2026-11-17) needed fixes here: PV-RCNN++ boxes 2.55 m back and 0.31 m left, ASF and L4DR
+# boxes in the wrong frames. The corrected tables (2026-11-25) hold the shift and the right frames; nothing is moved.
+DUPLICATE_M = 1.0
+LAGS = range(-10, 11)
+TIMING_MIN_FRAMES = 30
+TIMING_LAG = 2
+SUSPECT_Z = 3.5
 
 
 def read_split(meta):
@@ -310,16 +323,32 @@ def ghosts(unpaired, reference, test_frames):
             'nothing_within_5m_conf_0.5_per_s': int((clear.confidence >= 0.5).sum()) / seconds}
 
 
+def drop_duplicates(det, radius=DUPLICATE_M):
+    """Of boxes of the same class in the same frame closer than radius, keep only the most confident.
+    Returns the boxes kept and how many were dropped."""
+    det = det.sort_values('confidence', ascending=False, kind='stable').reset_index(drop=True)
+    keep = np.ones(len(det), dtype=bool)
+    for rows in det.groupby(['recording_id', 'frame_idx', 'class_name']).indices.values():
+        if len(rows) < 2:
+            continue
+        rows = np.sort(rows)                       # most confident first
+        x, y = det.x.values[rows], det.y.values[rows]
+        for k in range(1, len(rows)):
+            if (keep[rows[:k]] & (np.hypot(x[:k] - x[k], y[:k] - y[k]) < radius)).any():
+                keep[rows[k]] = False
+    return det[keep].reset_index(drop=True), int((~keep).sum())
+
+
 def load(data, meta, detector):
+    """Test frames only: reference vehicles in the detector area with their paired box (pairs), the boxes left over
+    (unpaired), all reference rows, the detector's boxes after drop_duplicates, and counts."""
     import pandas as pd
     reference = pd.read_parquet(Path(data) / 'reference' / 'kradar_P3.parquet')
     det = pd.read_parquet(Path(data) / 'candidates' / f'kradar_{detector}.parquet')
     split = read_split(meta)
     test = split[split.part == 'test'][['recording_id', 'frame_idx']]
     reference = reference.merge(test, on=['recording_id', 'frame_idx']).reset_index(drop=True)
-    det = det.merge(test, on=['recording_id', 'frame_idx'])
-    shift = FRAME_SHIFT_M.get(detector, (0.0, 0.0))
-    det = det.assign(x=det.x + shift[0], y=det.y + shift[1])
+    det, duplicates = drop_duplicates(det.merge(test, on=['recording_id', 'frame_idx']))
     vehicles = reference[reference.class_name.isin(CLASSES) & reference.x_est.between(*AREA_X_M)
                          & (reference.y_est.abs() < AREA_Y_M)]
     pairs, unpaired = pair(vehicles, det)
@@ -327,16 +356,114 @@ def load(data, meta, detector):
     pairs['range_m'] = np.hypot(pairs.x_est, pairs.y_est)
     pairs['band'] = band_of(pairs.range_m)
     pairs['lead'] = mark_lead(pairs)
-    return pairs, unpaired, reference, len(test), shift
+    return {'pairs': pairs, 'unpaired': unpaired, 'reference': reference, 'test_frames': len(test), 'boxes': det,
+            'duplicates': duplicates}
 
 
-def fit_detector(data, meta, detector):
-    pairs, unpaired, reference, test_frames, shift = load(data, meta, detector)
-    lead = pairs[pairs.lead & (pairs.class_name == 'Sedan')]
+def lead_rows(pairs):
+    return pairs[pairs.lead & (pairs.class_name == 'Sedan')]
+
+
+def timing(loaded):
+    """Best lag per recording (rows) and detector (columns): the detector frame f + lag paired with reference frame f,
+    the lag with the smallest median |error| of the lead; only recordings with TIMING_MIN_FRAMES+ paired lead frames at
+    lag 0. Row 'all': the best lag over all lead rows."""
+    import pandas as pd
+    columns = {}
+    for detector, item in loaded.items():
+        lead = lead_rows(item['pairs'])[['recording_id', 'frame_idx', 'track_id', 'x_est', 'y_est']]
+        boxes = item['boxes']
+        per_recording, pooled = {}, {}
+        for lag in LAGS:
+            shifted, _ = pair(lead, boxes.assign(frame_idx=boxes.frame_idx - lag))
+            per_recording[lag] = shifted.groupby('recording_id').error_m.apply(lambda e: e.abs().median())
+            pooled[lag] = float(shifted.error_m.abs().median())
+            if lag == 0:
+                count = shifted.groupby('recording_id').hit.sum()
+        table = pd.DataFrame(per_recording)
+        table = table[count.reindex(table.index).fillna(0) >= TIMING_MIN_FRAMES].dropna()
+        best = table.idxmin(axis=1).astype(float)
+        best['all'] = float(min(pooled, key=pooled.get))
+        columns[detector] = best
+    return pd.DataFrame(columns)
+
+
+def track_means(lead):
+    """Mean error of each lead track with LONG_TRACK+ paired frames."""
+    per = lead[lead.hit].groupby('track_id').error_m.agg(['mean', 'size'])
+    return per[per['size'] >= LONG_TRACK]['mean']
+
+
+def reference_suspects(leads, lags):
+    """Recordings and lead tracks where the reference is likely wrong, because every detector shows the same.
+
+    Recording: at least two detectors have a best lag, and all are TIMING_LAG+ frames off zero the same way.
+    Track: at least two detectors have its mean error, all with the same sign; their mean (the shared offset) has a
+    modified z-score (0.6745 (x - median) / MAD over such tracks, Iglewicz and Hoaglin) above SUSPECT_Z."""
+    import pandas as pd
+    lags = lags.drop(index='all', errors='ignore')
+    recordings = []
+    for recording, row in lags.iterrows():
+        values = row.dropna().values
+        if len(values) >= 2 and (np.all(values >= TIMING_LAG) or np.all(values <= -TIMING_LAG)):
+            recordings.append(recording)
+    means = pd.DataFrame({detector: track_means(lead) for detector, lead in leads.items()})
+    seen = means.notna().sum(axis=1)
+    signs = np.sign(means).nunique(axis=1)
+    means = means.assign(shared_m=means.mean(axis=1), detectors=seen)
+    usable = means[(seen >= 2) & (signs == 1)].copy()
+    if len(usable):
+        mad = float((usable.shared_m - usable.shared_m.median()).abs().median())
+        usable['z'] = 0.6745 * (usable.shared_m - usable.shared_m.median()) / mad if mad > 0 else 0.0
+    else:
+        usable['z'] = []
+    tracks = sorted(usable.index[usable.z.abs() > SUSPECT_Z])
+    return {'recordings': sorted(recordings), 'tracks': tracks,
+            'table': usable.loc[tracks].sort_values('shared_m') if tracks else usable.iloc[:0]}
+
+
+def drop_suspects(lead, suspects):
+    return lead[~lead.recording_id.isin(suspects['recordings']) & ~lead.track_id.isin(suspects['tracks'])]
+
+
+def error_split(leads):
+    """Per detector: the sd of the lead's error, the part all detectors share and its own part, on frames where every
+    detector has a paired box. Shared variance = mean covariance with the other detectors; own = the rest. Also the
+    correlation between detectors of the per-track mean errors. Empty with fewer than two detectors."""
+    import pandas as pd
+    if len(leads) < 2:
+        return {}
+    errors = pd.DataFrame({detector: lead[lead.hit].set_index(['track_id', 'frame_idx']).error_m
+                           for detector, lead in leads.items()}).dropna()
+    first = next(iter(leads.values()))
+    ranges = first.set_index(['track_id', 'frame_idx']).range_m.reindex(errors.index)
+    out = {detector: {'frames': len(errors)} for detector in leads}
+    for name, rows in (('all', errors), ('range 0-25 m', errors[ranges.values < 25])):
+        if len(rows) < 2:
+            continue
+        cov = rows.cov()
+        for detector in leads:
+            shared = float(np.mean([cov.loc[detector, other] for other in leads if other != detector]))
+            total = float(cov.loc[detector, detector])
+            out[detector][name] = {'sd_m': math.sqrt(total), 'shared_sd_m': math.sqrt(max(shared, 0.0)),
+                                   'own_sd_m': math.sqrt(max(total - shared, 0.0)), 'shared_share': shared / total}
+    counts = errors.groupby(level='track_id').size()
+    means = errors.groupby(level='track_id').mean()[counts >= LONG_TRACK]
+    corr = means.corr()
+    for detector in leads:
+        out[detector]['track_mean_correlation'] = {other: float(corr.loc[detector, other]) for other in leads
+                                                   if other != detector}
+        out[detector]['tracks'] = len(means)
+    return out
+
+
+def fit_detector(item, lead):
+    pairs = item['pairs']
     both, correlation, stretch = check(lead)
-    return {'table': tables(lead), 'sizes': size_table(pairs), 'ghosts': ghosts(unpaired, reference, test_frames),
-            'check': both, 'correlation': correlation, 'stretch': stretch, 'shift': shift, 'lead_rows': len(lead),
-            'vehicle_rows': len(pairs), 'vehicle_hit': float(pairs.hit.mean()),
+    return {'table': tables(lead), 'sizes': size_table(pairs),
+            'ghosts': ghosts(item['unpaired'], item['reference'], item['test_frames']),
+            'check': both, 'correlation': correlation, 'stretch': stretch, 'lead_rows': len(lead),
+            'vehicle_rows': len(pairs), 'vehicle_hit': float(pairs.hit.mean()), 'duplicates': item['duplicates'],
             'miss_runs_frames': sorted(int(n) for n in miss_stretches(lead)), 'target_offset': target_offsets(lead)}
 
 
@@ -449,8 +576,40 @@ def run(data, meta, detectors, output, check=True):
     columns = ['cell', 'rows', 'tracks', 'recordings', 'b_m', 'sd_m', 'robust_sd_m', 'q05_m', 'q95_m', 'sd_pct_of_range',
                'sigma_ou_m', 'sigma_white_m', 'tau_s', 'p_miss', 't_miss_s', 'misses_0.5s_up', 'misses_1s_up',
                'misses_2s_up', 'targets_over_1m_far', 'targets_over_1m_near']
+    loaded = {detector: load(data, meta, detector) for detector in detectors}
+    lags = timing(loaded)
+    suspects = reference_suspects({d: lead_rows(item['pairs']) for d, item in loaded.items()}, lags)
+    leads = {d: drop_suspects(lead_rows(item['pairs']), suspects) for d, item in loaded.items()}
+    split = error_split(leads)
+    lags.to_csv(output / 'check_timing.csv', index_label='recording_id')
+    off = lags.drop(index='all')
+    off = off[(off.fillna(0) != 0).any(axis=1)]
+    lines += ['## Checks on the data', '',
+              'Duplicates dropped (same class, same frame, < 1 m): '
+              + ', '.join(f'{d} {item["duplicates"]}' for d, item in loaded.items()) + '.', '',
+              f'Timing: best lag over all lead rows (frames): '
+              + ', '.join(f'{d} {lags.loc["all", d]:+.0f}' for d in detectors)
+              + f'. {len(lags) - 1} recordings with {TIMING_MIN_FRAMES}+ paired lead frames; those with a best lag '
+              'other than 0 for any detector:', '', markdown(off.reset_index(names='recording_id'), 2), '',
+              'Left out as reference faults (the same rows for every detector): recordings '
+              + (', '.join(suspects['recordings']) or 'none') + ' (every detector off by '
+              f'{TIMING_LAG}+ frames the same way); lead tracks ' + (', '.join(suspects['tracks']) or 'none')
+              + f' (offset shared by the detectors, modified z-score above {SUSPECT_Z}).', '']
+    if len(suspects['table']):
+        lines += [markdown(suspects['table'].reset_index(names='track_id')), '']
+    if split:
+        rows = [{'detector': d, 'frames': s['frames'], **{f'{k} {c}': s.get(c, {}).get(k, math.nan) for c in ('all', 'range 0-25 m')
+                                                          for k in ('sd_m', 'shared_sd_m', 'own_sd_m')}}
+                for d, s in split.items()]
+        import pandas as pd
+        lines += ['Shared part: on frames where every detector has the lead, the covariance between detectors is the '
+                  'error they share (a reference error, or one all of them make); the rest is the detector\'s own.', '',
+                  markdown(pd.DataFrame(rows)), '',
+                  'Correlation between detectors of the per-track mean errors: '
+                  + '; '.join(f'{d}: ' + ', '.join(f'{o} {v:.2f}' for o, v in s['track_mean_correlation'].items())
+                              for d, s in split.items()) + '.', '']
     for detector in detectors:
-        result = fit_detector(data, meta, detector)
+        result = fit_detector(loaded[detector], leads[detector])
         folder = output / detector
         folder.mkdir(exist_ok=True)
         result['table'].to_csv(folder / 'parameters.csv', index=False)
@@ -458,19 +617,20 @@ def run(data, meta, detectors, output, check=True):
         result['check'].to_csv(folder / 'check_halves.csv', index=False)
         result['correlation'].to_csv(folder / 'check_correlation.csv', index=False)
         result['stretch'].to_csv(folder / 'check_miss_stretches.csv', index=False)
-        parameters[detector] = {'frame_period_s': DT_S, 'frame_shift_m': result['shift'],
-                                'cells': result['table'].to_dict('records'),
+        parameters[detector] = {'frame_period_s': DT_S, 'cells': result['table'].to_dict('records'),
                                 'miss_runs_frames': result['miss_runs_frames'],
                                 'sizes': result['sizes'].to_dict('records'), 'ghosts': result['ghosts'],
-                                'target_offset': result['target_offset']}
+                                'target_offset': result['target_offset'], 'duplicates_dropped': result['duplicates'],
+                                'reference_left_out': {k: suspects[k] for k in ('recordings', 'tracks')},
+                                'error_split': split.get(detector, {})}
         offset = result['target_offset']
         spread = ', '.join(f'{name} {cell["sd_m"]:.3f}' for name, cell in offset['residual'].items())
         halves = result['check'][['cell', 'rows_A', 'rows_B', 'b_m_A', 'b_m_B', 'sd_m_A', 'sd_m_B', 'tau_s_A', 'tau_s_B',
                                   'p_miss_A', 'p_miss_B', 't_miss_s_A', 't_miss_s_B', 'B_inside_A_90pct']]
         g = result['ghosts']
         lines += [f'## {detector}', '',
-                  f'Frame shift added to x, y: {result["shift"]} m. Reference vehicles in the area (test frames): '
-                  f'{result["vehicle_rows"]}, paired {result["vehicle_hit"]:.3f}. Lead rows: {result["lead_rows"]}.', '',
+                  f'Reference vehicles in the area (test frames): {result["vehicle_rows"]}, paired '
+                  f'{result["vehicle_hit"]:.3f}. Lead rows: {result["lead_rows"]} (after the reference faults).', '',
                   '### Lead: distance error and misses', '', markdown(result['table'][columns]), '',
                   '### Lead: whole-track offsets (fitted plugin, offset "target")', '',
                   f'Mean error of each of the {len(offset["offsets_m"])} lead tracks with {offset["min_frames"]}+ '
