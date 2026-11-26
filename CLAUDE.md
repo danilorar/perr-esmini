@@ -9,7 +9,8 @@ Before writing a single line of code, read in this order:
 2. `docs/SUMMARY.md` — what the project is, what scenarios and controllers we use, frozen decisions.
 3. `docs/EXPERIMENTS.md` — every grid that has been run; check before designing a new one.
 4. `BLOCKS.md` — block-by-block plan; find which block is next and start there.
-5. `README.md` — setup and commands if you need to run anything.
+5. `docs/TODOS.md` — what is currently on hold and why. **Check before starting Block 4.**
+6. `README.md` — setup and commands if you need to run anything.
 
 If in doubt about the architecture of the error generator, read `docs/figures/architecture.png`
 (the pipeline diagram) and `pipeline/errors/__init__.py` (Chain class).
